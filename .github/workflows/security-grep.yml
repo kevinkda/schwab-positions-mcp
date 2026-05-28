@@ -1,0 +1,41 @@
+name: Security Boundary Check (no-trade)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  grep-mutation-keywords:
+    name: grep src/ for mutation API keywords
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Check for mutation API keywords in src/
+        run: |
+          set -euo pipefail
+          PATTERN='place_order|cancel_order|replace_order'
+          if grep -rEn "$PATTERN" src/ ; then
+            echo ""
+            echo "::error::Mutation API keywords found in src/ — schwab-positions-mcp must remain read-only."
+            echo "See docs/SECURITY.md for the 5-layer read-only contract."
+            exit 1
+          fi
+          echo "OK — no mutation API keywords in src/."
+
+      - name: Confirm read-only client white-list still asserts the boundary
+        run: |
+          set -euo pipefail
+          if ! grep -q "_READ_ONLY_METHODS" src/schwab_positions_mcp/client.py ; then
+            echo "::error::client.py no longer declares _READ_ONLY_METHODS — Layer 1 of the read-only boundary has regressed."
+            exit 1
+          fi
+          if ! grep -q "NotImplementedError" src/schwab_positions_mcp/client.py ; then
+            echo "::error::client.py no longer raises NotImplementedError on non-white-listed attribute access — Layer 1 has regressed."
+            exit 1
+          fi
+          echo "OK — Layer 1 still in place."
