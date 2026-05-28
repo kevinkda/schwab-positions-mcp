@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
 
 import pytest
 
@@ -25,20 +24,14 @@ class TestHealthCheck:
         assert out["status"] == "needs_env_setup"
         assert out["checks"]["token_present"] is False
 
-    def test_status_needs_oauth_login_when_creds_present(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> None:
+    def test_status_needs_oauth_login_when_creds_present(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         monkeypatch.setenv("SCHWAB_API_KEY", "k")
         monkeypatch.setenv("SCHWAB_APP_SECRET", "s")
-        monkeypatch.setenv(
-            "SCHWAB_POSITIONS_TOKEN_PATH", str(tmp_path / "missing.json")
-        )
+        monkeypatch.setenv("SCHWAB_POSITIONS_TOKEN_PATH", str(tmp_path / "missing.json"))
         out = meta.health_check_impl()
         assert out["status"] == "needs_oauth_login"
 
-    def test_overall_status_ready(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> None:
+    def test_overall_status_ready(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         token = tmp_path / "tok.json"
         token.write_text(json.dumps({"access_token": "x"}))
         monkeypatch.setenv("SCHWAB_API_KEY", "k")
@@ -85,7 +78,7 @@ class TestGetServerInfo:
         out = meta.get_server_info_impl()
         assert isinstance(out["platform"], str)
         assert isinstance(out["python_version"], str)
-        assert "schwab-positions-mcp" == out["name"]
+        assert out["name"] == "schwab-positions-mcp"
 
     def test_payload_argument_is_ignored(self) -> None:
         out = meta.get_server_info_impl({"anything": "is_ignored"})  # type: ignore[arg-type]

@@ -24,9 +24,7 @@ class TestBootstrapDotenv:
         bootstrap.bootstrap_dotenv()
         assert os.environ.get("SCHWAB_TEST_BOOTSTRAP_VAR") == "loaded"
 
-    def test_host_env_takes_precedence(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> None:
+    def test_host_env_takes_precedence(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         env = tmp_path / ".env"
         env.write_text("SCHWAB_TEST_BOOTSTRAP_VAR=from_file\n")
         monkeypatch.chdir(tmp_path)
@@ -34,9 +32,7 @@ class TestBootstrapDotenv:
         bootstrap.bootstrap_dotenv()
         assert os.environ.get("SCHWAB_TEST_BOOTSTRAP_VAR") == "from_host"
 
-    def test_no_env_file_is_ok(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> None:
+    def test_no_env_file_is_ok(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         monkeypatch.chdir(tmp_path)
         # No .env in tmp_path; must not raise.
         bootstrap.bootstrap_dotenv()
@@ -46,9 +42,7 @@ class TestPlatformShims:
     def test_state_root_returns_path(self) -> None:
         assert isinstance(_platform.state_root(), Path)
 
-    def test_state_root_with_xdg(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> None:
+    def test_state_root_with_xdg(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
         assert _platform.state_root() == tmp_path
 

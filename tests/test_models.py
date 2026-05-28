@@ -9,8 +9,8 @@ from pydantic import ValidationError
 
 from schwab_positions_mcp.models import (
     GetAccountPositionsInput,
-    GetAccountSummaryInput,
     GetAccountsInput,
+    GetAccountSummaryInput,
     GetOrdersHistoryInput,
     GetTransactionsInput,
 )
@@ -69,9 +69,7 @@ class TestGetAccountPositionsInput:
 
     def test_invalid_chars_rejected(self) -> None:
         with pytest.raises(ValidationError):
-            GetAccountPositionsInput.model_validate(
-                {"account_hash": "BAD HASH WITH SPACES!!"}
-            )
+            GetAccountPositionsInput.model_validate({"account_hash": "BAD HASH WITH SPACES!!"})
 
     def test_too_long_rejected(self) -> None:
         with pytest.raises(ValidationError):
@@ -189,6 +187,4 @@ class TestGetAccountSummaryInput:
 
     def test_extra_field_rejected(self) -> None:
         with pytest.raises(ValidationError):
-            GetAccountSummaryInput.model_validate(
-                {"account_hash": VALID_HASH, "stray": True}
-            )
+            GetAccountSummaryInput.model_validate({"account_hash": VALID_HASH, "stray": True})

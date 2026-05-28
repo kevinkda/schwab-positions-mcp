@@ -12,8 +12,6 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import MagicMock
 
-import pytest
-
 from schwab_positions_mcp import server as server_module
 from schwab_positions_mcp.tools import meta
 
@@ -131,4 +129,4 @@ class TestMainFunctionGuarded:
 
 class TestVersionAttribute:
     def test_mcp_server_has_version(self) -> None:
-        assert server_module.mcp._mcp_server.version  # noqa: SLF001
+        assert server_module.mcp._mcp_server.version

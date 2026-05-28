@@ -35,7 +35,7 @@ if TYPE_CHECKING:
 
 def test_white_list_methods_proxy_to_underlying(
     readonly_client: ReadOnlySchwabClient,
-    mock_schwab_client: "MagicMock",
+    mock_schwab_client: MagicMock,
 ) -> None:
     """Every method in the white-list must forward verbatim to the wrapped client."""
     for method_name in _READ_ONLY_METHODS:

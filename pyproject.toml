@@ -1,6 +1,6 @@
 [project]
 name = "schwab-positions-mcp"
-version = "0.0.0+dev"
+version = "0.1.0"
 description = "Read-only MCP server for Schwab account positions, orders, and transactions. NO trade endpoints exposed by design."
 readme = "README.md"
 requires-python = ">=3.11"

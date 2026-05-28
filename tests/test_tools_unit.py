@@ -30,7 +30,6 @@ from schwab_positions_mcp.tools import (
     transactions,
 )
 
-
 VALID_HASH = "ACCT_HASH_AAAAAAAAAAAA"
 
 
@@ -71,42 +70,32 @@ class TestGetAccounts:
         accounts.get_accounts_impl({"fields": ["positions"]})
         mock_schwab_client.get_accounts.assert_called_once_with(fields=["positions"])
 
-    def test_handles_401(
-        self, installed_client: Any, mock_schwab_client: MagicMock
-    ) -> None:
+    def test_handles_401(self, installed_client: Any, mock_schwab_client: MagicMock) -> None:
         mock_schwab_client.get_accounts.return_value = _resp(401, request_id="REQ-401")
         out = accounts.get_accounts_impl({})
         assert out["ok"] is False
         assert out["error"]["status_code"] == 401
         assert out["error"]["reason"] == "refresh_token_expired"
 
-    def test_handles_429(
-        self, installed_client: Any, mock_schwab_client: MagicMock
-    ) -> None:
+    def test_handles_429(self, installed_client: Any, mock_schwab_client: MagicMock) -> None:
         mock_schwab_client.get_accounts.return_value = _resp(429)
         out = accounts.get_accounts_impl({})
         assert out["ok"] is False
         assert out["error"]["reason"] == "rate_limited"
 
-    def test_handles_5xx(
-        self, installed_client: Any, mock_schwab_client: MagicMock
-    ) -> None:
+    def test_handles_5xx(self, installed_client: Any, mock_schwab_client: MagicMock) -> None:
         mock_schwab_client.get_accounts.return_value = _resp(503)
         out = accounts.get_accounts_impl({})
         assert out["ok"] is False
         assert out["error"]["reason"] == "upstream_error"
 
-    def test_empty_list_edge_case(
-        self, installed_client: Any, mock_schwab_client: MagicMock
-    ) -> None:
+    def test_empty_list_edge_case(self, installed_client: Any, mock_schwab_client: MagicMock) -> None:
         mock_schwab_client.get_accounts.return_value = _resp(200, [])
         out = accounts.get_accounts_impl({})
         assert out["ok"] is True
         assert out["count"] == 0
 
-    def test_handles_403(
-        self, installed_client: Any, mock_schwab_client: MagicMock
-    ) -> None:
+    def test_handles_403(self, installed_client: Any, mock_schwab_client: MagicMock) -> None:
         mock_schwab_client.get_accounts.return_value = _resp(403)
         out = accounts.get_accounts_impl({})
         assert out["ok"] is False
@@ -141,41 +130,31 @@ class TestGetAccountPositions:
         mock_schwab_client.get_account.return_value = _resp(200, mock_positions_data)
         out = positions.get_account_positions_impl({"account_hash": VALID_HASH})
         assert out["_cache_status"].startswith("snapshot_written:")
-        assert "snapshot_written:2" == out["_cache_status"]
+        assert out["_cache_status"] == "snapshot_written:2"
 
-    def test_invalid_hash_raises_validation(
-        self, installed_client: Any
-    ) -> None:
+    def test_invalid_hash_raises_validation(self, installed_client: Any) -> None:
         with pytest.raises(Exception) as excinfo:
             positions.get_account_positions_impl({"account_hash": "x"})
         assert "validation" in type(excinfo.value).__name__.lower()
 
-    def test_handles_401(
-        self, installed_client: Any, mock_schwab_client: MagicMock
-    ) -> None:
+    def test_handles_401(self, installed_client: Any, mock_schwab_client: MagicMock) -> None:
         mock_schwab_client.get_account.return_value = _resp(401)
         out = positions.get_account_positions_impl({"account_hash": VALID_HASH})
         assert out["ok"] is False
 
-    def test_handles_429(
-        self, installed_client: Any, mock_schwab_client: MagicMock
-    ) -> None:
+    def test_handles_429(self, installed_client: Any, mock_schwab_client: MagicMock) -> None:
         mock_schwab_client.get_account.return_value = _resp(429)
         out = positions.get_account_positions_impl({"account_hash": VALID_HASH})
         assert out["ok"] is False
         assert out["error"]["reason"] == "rate_limited"
 
-    def test_handles_5xx(
-        self, installed_client: Any, mock_schwab_client: MagicMock
-    ) -> None:
+    def test_handles_5xx(self, installed_client: Any, mock_schwab_client: MagicMock) -> None:
         mock_schwab_client.get_account.return_value = _resp(500)
         out = positions.get_account_positions_impl({"account_hash": VALID_HASH})
         assert out["ok"] is False
         assert out["error"]["reason"] == "upstream_error"
 
-    def test_no_positions_edge_case(
-        self, installed_client: Any, mock_schwab_client: MagicMock
-    ) -> None:
+    def test_no_positions_edge_case(self, installed_client: Any, mock_schwab_client: MagicMock) -> None:
         mock_schwab_client.get_account.return_value = _resp(
             200, {"securitiesAccount": {"accountNumber": "X", "positions": []}}
         )
@@ -232,31 +211,23 @@ class TestGetOrdersHistory:
         kwargs = mock_schwab_client.get_orders_for_account.call_args.kwargs
         assert kwargs["max_results"] == 100
 
-    def test_handles_429(
-        self, installed_client: Any, mock_schwab_client: MagicMock
-    ) -> None:
+    def test_handles_429(self, installed_client: Any, mock_schwab_client: MagicMock) -> None:
         mock_schwab_client.get_orders_for_account.return_value = _resp(429)
         out = orders.get_orders_history_impl(self._payload())
         assert out["ok"] is False
         assert out["error"]["reason"] == "rate_limited"
 
-    def test_handles_401(
-        self, installed_client: Any, mock_schwab_client: MagicMock
-    ) -> None:
+    def test_handles_401(self, installed_client: Any, mock_schwab_client: MagicMock) -> None:
         mock_schwab_client.get_orders_for_account.return_value = _resp(401)
         out = orders.get_orders_history_impl(self._payload())
         assert out["ok"] is False
 
-    def test_handles_5xx(
-        self, installed_client: Any, mock_schwab_client: MagicMock
-    ) -> None:
+    def test_handles_5xx(self, installed_client: Any, mock_schwab_client: MagicMock) -> None:
         mock_schwab_client.get_orders_for_account.return_value = _resp(502)
         out = orders.get_orders_history_impl(self._payload())
         assert out["ok"] is False
 
-    def test_empty_results(
-        self, installed_client: Any, mock_schwab_client: MagicMock
-    ) -> None:
+    def test_empty_results(self, installed_client: Any, mock_schwab_client: MagicMock) -> None:
         mock_schwab_client.get_orders_for_account.return_value = _resp(200, [])
         out = orders.get_orders_history_impl(self._payload())
         assert out["ok"] is True
@@ -271,7 +242,7 @@ class TestGetOrdersHistory:
     ) -> None:
         mock_schwab_client.get_orders_for_account.return_value = _resp(200, mock_orders_data)
         out = orders.get_orders_history_impl(self._payload())
-        assert "history_written:2" == out["_cache_status"]
+        assert out["_cache_status"] == "history_written:2"
 
 
 # ---------------------------------------------------------------------------
@@ -322,24 +293,18 @@ class TestGetTransactions:
         kwargs = mock_schwab_client.get_transactions.call_args.kwargs
         assert kwargs["symbol"] == "AAPL"
 
-    def test_handles_5xx(
-        self, installed_client: Any, mock_schwab_client: MagicMock
-    ) -> None:
+    def test_handles_5xx(self, installed_client: Any, mock_schwab_client: MagicMock) -> None:
         mock_schwab_client.get_transactions.return_value = _resp(500)
         out = transactions.get_transactions_impl(self._payload())
         assert out["ok"] is False
         assert out["error"]["reason"] == "upstream_error"
 
-    def test_handles_401(
-        self, installed_client: Any, mock_schwab_client: MagicMock
-    ) -> None:
+    def test_handles_401(self, installed_client: Any, mock_schwab_client: MagicMock) -> None:
         mock_schwab_client.get_transactions.return_value = _resp(401)
         out = transactions.get_transactions_impl(self._payload())
         assert out["ok"] is False
 
-    def test_handles_429(
-        self, installed_client: Any, mock_schwab_client: MagicMock
-    ) -> None:
+    def test_handles_429(self, installed_client: Any, mock_schwab_client: MagicMock) -> None:
         mock_schwab_client.get_transactions.return_value = _resp(429)
         out = transactions.get_transactions_impl(self._payload())
         assert out["ok"] is False
@@ -353,7 +318,7 @@ class TestGetTransactions:
     ) -> None:
         mock_schwab_client.get_transactions.return_value = _resp(200, mock_transactions_data)
         out = transactions.get_transactions_impl(self._payload())
-        assert "history_written:2" == out["_cache_status"]
+        assert out["_cache_status"] == "history_written:2"
 
 
 # ---------------------------------------------------------------------------
@@ -522,9 +487,7 @@ class TestCommonHelpers:
         with pytest.raises(SchwabClientUnavailable):
             _build_client()
 
-    def test_build_client_missing_token(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Any
-    ) -> None:
+    def test_build_client_missing_token(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Any) -> None:
         from schwab_positions_mcp.tools._common import (
             SchwabClientUnavailable,
             _build_client,
@@ -532,9 +495,7 @@ class TestCommonHelpers:
 
         monkeypatch.setenv("SCHWAB_API_KEY", "fake")
         monkeypatch.setenv("SCHWAB_APP_SECRET", "fake")
-        monkeypatch.setenv(
-            "SCHWAB_POSITIONS_TOKEN_PATH", str(tmp_path / "missing.json")
-        )
+        monkeypatch.setenv("SCHWAB_POSITIONS_TOKEN_PATH", str(tmp_path / "missing.json"))
         with pytest.raises(SchwabClientUnavailable):
             _build_client()
 

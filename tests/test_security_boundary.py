@@ -44,15 +44,13 @@ class TestGrepBoundary:
     def test_client_still_declares_whitelist(self) -> None:
         client_py = (SRC_ROOT / "client.py").read_text(encoding="utf-8")
         assert "_READ_ONLY_METHODS" in client_py, (
-            "Layer 1 has regressed — client.py no longer declares "
-            "_READ_ONLY_METHODS. The CI grep gate would also fail."
+            "Layer 1 has regressed — client.py no longer declares _READ_ONLY_METHODS. The CI grep gate would also fail."
         )
 
     def test_client_still_raises_not_implemented(self) -> None:
         client_py = (SRC_ROOT / "client.py").read_text(encoding="utf-8")
         assert "NotImplementedError" in client_py, (
-            "Layer 1 has regressed — client.py no longer raises "
-            "NotImplementedError on non-white-listed access."
+            "Layer 1 has regressed — client.py no longer raises NotImplementedError on non-white-listed access."
         )
 
 
@@ -77,9 +75,7 @@ class TestSecurityDocs:
 
 
 class TestStartupWarning:
-    def test_server_logs_warning_on_import(
-        self, caplog: pytest.LogCaptureFixture
-    ) -> None:
+    def test_server_logs_warning_on_import(self, caplog: pytest.LogCaptureFixture) -> None:
         """Layer 2 — importing ``server`` must emit a READ-ONLY warning.
 
         We import inside the test (and reset the logger handlers) so we can
@@ -95,8 +91,7 @@ class TestStartupWarning:
         with caplog.at_level(logging.WARNING, logger=srv.__name__):
             # Re-emit the canonical warning to verify the message text.
             srv.logger.warning(
-                "schwab-positions-mcp starting in READ-ONLY MODE. "
-                "No trade endpoints exposed. See docs/SECURITY.md."
+                "schwab-positions-mcp starting in READ-ONLY MODE. No trade endpoints exposed. See docs/SECURITY.md."
             )
         joined = " ".join(rec.getMessage() for rec in caplog.records)
         assert "READ-ONLY MODE" in joined
@@ -114,6 +109,4 @@ class TestToolSurfaceAudit:
 
         info = meta.get_server_info_impl()
         for tool in info["tools"]:
-            assert _FORBIDDEN_PATTERN.search(tool) is None, (
-                f"Tool name {tool!r} matches a forbidden mutation keyword"
-            )
+            assert _FORBIDDEN_PATTERN.search(tool) is None, f"Tool name {tool!r} matches a forbidden mutation keyword"

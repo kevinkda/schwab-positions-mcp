@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
-import os
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-import duckdb
 import pytest
 
-from schwab_positions_mcp import cache as cache_module
 from schwab_positions_mcp.cache import (
     Cache,
     cache_bypass,
@@ -42,9 +39,7 @@ class TestSchema:
 
 
 class TestWritePositions:
-    def test_inserts(
-        self, fresh_cache: Cache, mock_positions_data: dict[str, Any]
-    ) -> None:
+    def test_inserts(self, fresh_cache: Cache, mock_positions_data: dict[str, Any]) -> None:
         positions = mock_positions_data["securitiesAccount"]["positions"]
         n = fresh_cache.write_positions_snapshot("HASH_1", positions)
         assert n == 2
@@ -72,9 +67,7 @@ class TestWritePositions:
 
 
 class TestWriteOrders:
-    def test_inserts(
-        self, fresh_cache: Cache, mock_orders_data: list[dict[str, Any]]
-    ) -> None:
+    def test_inserts(self, fresh_cache: Cache, mock_orders_data: list[dict[str, Any]]) -> None:
         n = fresh_cache.write_orders_history("HASH_1", mock_orders_data)
         assert n == 2
 
@@ -83,9 +76,7 @@ class TestWriteOrders:
 
 
 class TestWriteTransactions:
-    def test_inserts(
-        self, fresh_cache: Cache, mock_transactions_data: list[dict[str, Any]]
-    ) -> None:
+    def test_inserts(self, fresh_cache: Cache, mock_transactions_data: list[dict[str, Any]]) -> None:
         n = fresh_cache.write_transactions_history("HASH_1", mock_transactions_data)
         assert n == 2
 
@@ -94,9 +85,7 @@ class TestWriteTransactions:
 
 
 class TestCacheEvents:
-    def test_event_logged_on_insert(
-        self, fresh_cache: Cache, mock_orders_data: list[dict[str, Any]]
-    ) -> None:
+    def test_event_logged_on_insert(self, fresh_cache: Cache, mock_orders_data: list[dict[str, Any]]) -> None:
         fresh_cache.write_orders_history("HASH_1", mock_orders_data)
         rows = fresh_cache._conn.execute(  # type: ignore[union-attr]
             "SELECT kind, table_name, row_count FROM cache_events"
@@ -124,16 +113,12 @@ class TestEnvFlags:
 
 
 class TestSingleton:
-    def test_get_cache_disabled_returns_none(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_get_cache_disabled_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
         reset_cache_singleton()
         monkeypatch.setenv("SCHWAB_POSITIONS_CACHE_ENABLED", "0")
         assert get_cache() is None
 
-    def test_get_cache_returns_singleton(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> None:
+    def test_get_cache_returns_singleton(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         reset_cache_singleton()
         monkeypatch.setenv("SCHWAB_POSITIONS_CACHE_ENABLED", "1")
         monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
@@ -198,7 +183,7 @@ class TestErrorHandling:
         fresh_cache.close()
         # Second close on the same instance must not raise.
         fresh_cache.close()
-        assert fresh_cache._conn is None  # noqa: SLF001
+        assert fresh_cache._conn is None
 
     def test_writes_after_close_return_zero(
         self,
