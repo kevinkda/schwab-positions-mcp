@@ -64,10 +64,7 @@ class ReadOnlySchwabClient:
         )
 
     def __setattr__(self, name: str, value: Any) -> None:
-        raise AttributeError(
-            "ReadOnlySchwabClient is immutable; cannot set attribute "
-            f"{name!r}. See docs/SECURITY.md."
-        )
+        raise AttributeError(f"ReadOnlySchwabClient is immutable; cannot set attribute {name!r}. See docs/SECURITY.md.")
 
     def __repr__(self) -> str:
         return "ReadOnlySchwabClient(<schwab.client.Client>)"

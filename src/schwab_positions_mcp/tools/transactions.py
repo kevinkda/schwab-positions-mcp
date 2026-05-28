@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, time, timezone
+from datetime import UTC, datetime, time
 from typing import Any
 
 from ..cache import get_cache
@@ -15,8 +15,8 @@ def get_transactions_impl(payload: dict[str, Any]) -> dict[str, Any]:
     args = GetTransactionsInput.model_validate(payload)
     client = get_client()
 
-    start_dt = datetime.combine(args.start_date, time.min, tzinfo=timezone.utc)
-    end_dt = datetime.combine(args.end_date, time.max, tzinfo=timezone.utc)
+    start_dt = datetime.combine(args.start_date, time.min, tzinfo=UTC)
+    end_dt = datetime.combine(args.end_date, time.max, tzinfo=UTC)
 
     kwargs: dict[str, Any] = {
         "start_date": start_dt,

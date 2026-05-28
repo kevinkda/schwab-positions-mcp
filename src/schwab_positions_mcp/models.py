@@ -8,7 +8,7 @@ client-side instead of paying a round-trip on bad inputs.
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
@@ -144,7 +144,7 @@ class GetOrdersHistoryInput(_StrictModel):
     def _require_tzaware(cls, value: datetime) -> datetime:
         if value.tzinfo is None:
             raise ValueError("datetime must be timezone-aware (use UTC).")
-        return value.astimezone(timezone.utc)
+        return value.astimezone(UTC)
 
 
 class GetTransactionsInput(_StrictModel):

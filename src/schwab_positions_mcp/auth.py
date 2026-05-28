@@ -65,9 +65,7 @@ def build_auth_config(config_dir: str | None = None) -> AuthConfig:
     app_secret = os.environ.get("SCHWAB_APP_SECRET", "").strip()
     callback_url = os.environ.get("SCHWAB_CALLBACK_URL", "https://127.0.0.1:8182").strip()
     if not api_key or not app_secret:
-        raise SchwabAuthError(
-            "Missing SCHWAB_API_KEY / SCHWAB_APP_SECRET. Populate .env from .env.example."
-        )
+        raise SchwabAuthError("Missing SCHWAB_API_KEY / SCHWAB_APP_SECRET. Populate .env from .env.example.")
     cfg_dir = _resolve_config_dir(config_dir)
     cfg_dir.mkdir(parents=True, exist_ok=True)
     try:

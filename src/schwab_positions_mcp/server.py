@@ -25,13 +25,10 @@ from . import __version__ as SERVER_VERSION  # noqa: E402
 from .tools import accounts, meta, orders, positions, summary, transactions  # noqa: E402
 
 logger = logging.getLogger(__name__)
-logger.warning(
-    "schwab-positions-mcp starting in READ-ONLY MODE. "
-    "No trade endpoints exposed. See docs/SECURITY.md."
-)
+logger.warning("schwab-positions-mcp starting in READ-ONLY MODE. No trade endpoints exposed. See docs/SECURITY.md.")
 
 mcp: FastMCP = FastMCP("schwab-positions-mcp")
-mcp._mcp_server.version = SERVER_VERSION  # noqa: SLF001
+mcp._mcp_server.version = SERVER_VERSION
 
 
 # ---------------------------------------------------------------------------

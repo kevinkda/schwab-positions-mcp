@@ -49,20 +49,16 @@ def _build_client() -> ReadOnlySchwabClient:
     """
     api_key = os.environ.get("SCHWAB_API_KEY", "").strip()
     app_secret = os.environ.get("SCHWAB_APP_SECRET", "").strip()
-    callback_url = os.environ.get("SCHWAB_CALLBACK_URL", "https://127.0.0.1:8182").strip()
     token_path = _token_path()
     if not api_key or not app_secret:
-        raise SchwabClientUnavailable(
-            "Missing SCHWAB_API_KEY / SCHWAB_APP_SECRET; populate .env."
-        )
+        raise SchwabClientUnavailable("Missing SCHWAB_API_KEY / SCHWAB_APP_SECRET; populate .env.")
     if not token_path.exists():
         raise SchwabClientUnavailable(
-            f"OAuth token not found at {token_path}. Run "
-            "`uv run python -m schwab_positions_mcp.auth login_flow` first."
+            f"OAuth token not found at {token_path}. Run `uv run python -m schwab_positions_mcp.auth login_flow` first."
         )
 
     # Local import — schwab-py is heavy and has its own logging side-effects.
-    from schwab.auth import client_from_token_file  # type: ignore[import-not-found]
+    from schwab.auth import client_from_token_file
 
     raw_client = client_from_token_file(
         api_key=api_key,

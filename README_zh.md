@@ -4,8 +4,7 @@
 >
 > 无 `place_order`、无 `cancel_order`、无 `replace_order`。本 MCP 服务器
 > 仅向 LLM Agent 暴露 Schwab 账户状态，**绝不**暴露任何下单/撤单接口。
-> 由 5 层边界强制（运行时白名单 + 启动警告 + 工具面审计 + CI grep 卡点
-> + 拒绝测试）。
+> 由 5 层边界强制（运行时白名单 + 启动警告 + 工具面审计 + CI grep 卡点 + 拒绝测试）。
 
 [English](README.md)
 

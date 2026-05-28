@@ -15,6 +15,7 @@ public API; format changes there do not bump major.
 ## Release checklist
 
 1. All quality gates green:
+
    ```bash
    uv run pytest --cov          # ≥ 85% coverage
    uv run ruff check src tests
@@ -23,10 +24,13 @@ public API; format changes there do not bump major.
    uv run bandit -r src -lll
    uv run pip-audit
    ```
+
 2. Security boundary still in place:
+
    ```bash
    grep -rE 'place_order|cancel_order|replace_order' src/   # must be 0 hits
    ```
+
 3. `CHANGELOG.md`:
    - Move `[Unreleased]` content under a new
      `## [X.Y.Z] - YYYY-MM-DD` heading.
@@ -35,11 +39,13 @@ public API; format changes there do not bump major.
 5. `__init__.py` `__version__` bump to `X.Y.Z`.
 6. Commit: `chore(release): vX.Y.Z`.
 7. Tag + GitHub release:
+
    ```bash
    git tag -a vX.Y.Z -m "Release vX.Y.Z"
    git push origin main vX.Y.Z
    gh release create vX.Y.Z --notes-from-tag
    ```
+
 8. Bump `version` in `pyproject.toml` back to a `+dev` suffix on `main`
    for the next iteration.
 
