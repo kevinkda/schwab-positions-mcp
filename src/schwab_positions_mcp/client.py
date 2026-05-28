@@ -4,8 +4,8 @@ This is **Layer 1** of the 5-layer read-only security boundary documented in
 ``docs/SECURITY.md``. Every call into the underlying ``schwab.client.Client``
 must go through :class:`ReadOnlySchwabClient`, which exposes ONLY the methods
 listed in :data:`_READ_ONLY_METHODS`. Any other attribute access — including
-all of schwab-py's mutation methods (``place_order``, ``cancel_order``,
-``replace_order``, etc.) — raises :class:`NotImplementedError` at runtime.
+all of schwab-py's mutation methods for placing, cancelling, or replacing
+orders — raises :class:`NotImplementedError` at runtime.
 
 This is enforced via ``__getattr__``, so even reflection / monkeypatching
 attempts that bypass the import-time interface still fail.
