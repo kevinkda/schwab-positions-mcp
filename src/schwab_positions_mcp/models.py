@@ -8,10 +8,22 @@ client-side instead of paying a round-trip on bad inputs.
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
+
+# ---------------------------------------------------------------------------
+# Module constants
+# ---------------------------------------------------------------------------
+
+# Schwab Trader API hard limit on order history lookback window.
+_ORDERS_LOOKBACK_DAYS = 60
+# Schwab Trader API hard limit on transactions history lookback window.
+# (Some Schwab docs mention 90 days; we stay conservative at 60 to match the
+# documented orders behavior — bump only after verifying upstream.)
+_TRANSACTIONS_LOOKBACK_DAYS = 60
+
 
 # ---------------------------------------------------------------------------
 # Shared types
@@ -146,6 +158,30 @@ class GetOrdersHistoryInput(_StrictModel):
             raise ValueError("datetime must be timezone-aware (use UTC).")
         return value.astimezone(UTC)
 
+    @field_validator("from_entered_time")
+    @classmethod
+    def _within_orders_lookback(cls, value: datetime) -> datetime:
+        """Schwab Trader API caps from_entered_time at 60 days lookback.
+
+        Note on boundary: strict ``<`` comparison — a value exactly
+        ``now - 60 days`` is accepted by Pydantic. If Schwab itself
+        enforces ``≤ 60 days``, the API may still 400; bump to ``<=``
+        if real-world testing surfaces that case.
+
+        Validator order matters: ``_require_tzaware`` runs first
+        (declaration order under Pydantic v2), so ``value`` here is
+        guaranteed tz-aware UTC by the time we compare it.
+        """
+        cutoff = datetime.now(UTC) - timedelta(days=_ORDERS_LOOKBACK_DAYS)
+        if value < cutoff:
+            raise ValueError(
+                f"from_entered_time must be within last {_ORDERS_LOOKBACK_DAYS} days "
+                f"(>= {cutoff.isoformat()}). Got {value.isoformat()}. "
+                f"Schwab Trader API caps order history lookback at "
+                f"{_ORDERS_LOOKBACK_DAYS} days."
+            )
+        return value
+
 
 class GetTransactionsInput(_StrictModel):
     """Input for ``get_transactions``."""
@@ -169,6 +205,25 @@ class GetTransactionsInput(_StrictModel):
         start = info.data.get("start_date") if info.data else None
         if start and value < start:
             raise ValueError("end_date must be >= start_date.")
+        return value
+
+    @field_validator("start_date")
+    @classmethod
+    def _within_transactions_lookback(cls, value: date) -> date:
+        """Schwab Trader API caps start_date at 60 days lookback.
+
+        Mirrors GetOrdersHistoryInput._within_orders_lookback. Operates
+        on ``date`` (not ``datetime``); we compute the cutoff from
+        ``datetime.now(UTC).date()`` for parity with order-side logic.
+        """
+        cutoff = (datetime.now(UTC) - timedelta(days=_TRANSACTIONS_LOOKBACK_DAYS)).date()
+        if value < cutoff:
+            raise ValueError(
+                f"start_date must be within last {_TRANSACTIONS_LOOKBACK_DAYS} days "
+                f"(>= {cutoff.isoformat()}). Got {value.isoformat()}. "
+                f"Schwab Trader API caps transaction history lookback at "
+                f"{_TRANSACTIONS_LOOKBACK_DAYS} days."
+            )
         return value
 
 
