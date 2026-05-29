@@ -22,7 +22,7 @@ from typing import Any  # noqa: E402
 from mcp.server.fastmcp import FastMCP  # noqa: E402
 
 from . import __version__ as SERVER_VERSION  # noqa: E402
-from .tools import accounts, meta, orders, positions, summary, transactions  # noqa: E402
+from .tools import account_numbers, accounts, meta, orders, positions, summary, transactions  # noqa: E402
 
 logger = logging.getLogger(__name__)
 logger.warning("schwab-positions-mcp starting in READ-ONLY MODE. No trade endpoints exposed. See docs/SECURITY.md.")
@@ -45,6 +45,20 @@ mcp._mcp_server.version = SERVER_VERSION
 )
 def get_accounts(fields: list[str] | None = None) -> dict[str, Any]:
     return accounts.get_accounts_impl({"fields": fields})
+
+
+@mcp.tool(
+    name="get_account_numbers",
+    description=(
+        "Return the mapping of plaintext accountNumber to encrypted "
+        "account_hash (Schwab hashValue) for every linked account. The "
+        "encrypted hash is required by all other tools that take an "
+        "account_hash argument (get_account_positions, get_account_summary, "
+        "get_orders_history, get_transactions)."
+    ),
+)
+def get_account_numbers() -> dict[str, Any]:
+    return account_numbers.get_account_numbers_impl()
 
 
 @mcp.tool(
