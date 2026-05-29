@@ -67,9 +67,7 @@ class TestB1EnforceEnumsDisabled:
     with an opaque ValueError.
     """
 
-    def test_b1_build_client_sets_enforce_enums_false(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> None:
+    def test_b1_build_client_sets_enforce_enums_false(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         """``_build_client`` passes ``enforce_enums=False`` to schwab-py."""
         token_file = tmp_path / "token.json"
         token_file.write_text("{}", encoding="utf-8")
@@ -117,8 +115,7 @@ class TestB1EnforceEnumsDisabled:
                     offenders.append(str(py.relative_to(repo_root)))
                     break
         assert offenders == [], (
-            "B1 regression — 'enforce_enums=True' is back in non-comment "
-            f"src/ code. Offenders: {offenders}"
+            f"B1 regression — 'enforce_enums=True' is back in non-comment src/ code. Offenders: {offenders}"
         )
 
     def test_b1_get_accounts_with_fields_string_succeeds(
@@ -206,15 +203,15 @@ class TestB2GetAccountNumbersTool:
     ) -> None:
         """200 OK → ``ok=True`` with the parsed list and a ``count``."""
         payload = [
-            {"accountNumber": "74775319", "hashValue": "5ABDD309F7B7"},
-            {"accountNumber": "12345678", "hashValue": "ABCDEF123456"},
+            {"accountNumber": "74775319", "hashValue": "5ABDD309F7B7"},  # pragma: allowlist secret
+            {"accountNumber": "12345678", "hashValue": "ABCDEF123456"},  # pragma: allowlist secret
         ]
         mock_schwab_client.get_account_numbers.return_value = _resp(200, payload)
         out = account_numbers.get_account_numbers_impl()
         assert out["ok"] is True
         assert out["count"] == 2
         assert out["account_numbers"][0]["accountNumber"] == "74775319"
-        assert out["account_numbers"][0]["hashValue"] == "5ABDD309F7B7"
+        assert out["account_numbers"][0]["hashValue"] == "5ABDD309F7B7"  # pragma: allowlist secret
         assert out["_cache_status"] == "skipped:not-cached"
 
     def test_b2_handles_401(
@@ -296,9 +293,7 @@ class TestB3OrdersCommentAccurate:
     def test_b3_comment_does_not_claim_higher_precedence(self) -> None:
         """The misleading "at higher precedence" phrase must be gone."""
         repo_root = Path(__file__).resolve().parent.parent
-        orders_py = (repo_root / "src" / "schwab_positions_mcp" / "tools" / "orders.py").read_text(
-            encoding="utf-8"
-        )
+        orders_py = (repo_root / "src" / "schwab_positions_mcp" / "tools" / "orders.py").read_text(encoding="utf-8")
         assert "higher precedence" not in orders_py, (
             "B3 regression — orders.py still claims enforce_enums=False is "
             "applied 'at higher precedence', which was never true."
@@ -307,9 +302,7 @@ class TestB3OrdersCommentAccurate:
     def test_b3_comment_mentions_enforce_enums_false(self) -> None:
         """The new comment should explain the actual mechanism."""
         repo_root = Path(__file__).resolve().parent.parent
-        orders_py = (repo_root / "src" / "schwab_positions_mcp" / "tools" / "orders.py").read_text(
-            encoding="utf-8"
-        )
+        orders_py = (repo_root / "src" / "schwab_positions_mcp" / "tools" / "orders.py").read_text(encoding="utf-8")
         assert "enforce_enums=False" in orders_py
 
 
@@ -324,8 +317,7 @@ class TestB4ServerInfoListsAccountNumbers:
     def test_b4_tool_list_contains_get_account_numbers(self) -> None:
         info = meta.get_server_info_impl()
         assert "get_account_numbers" in info["tools"], (
-            "B4 regression — get_server_info must list get_account_numbers "
-            "now that it is registered as an MCP tool."
+            "B4 regression — get_server_info must list get_account_numbers now that it is registered as an MCP tool."
         )
 
     def test_b4_tool_count_is_eight(self) -> None:
@@ -349,5 +341,5 @@ class TestB4ServerInfoListsAccountNumbers:
         if not path.exists():
             pytest.skip("README_zh.md absent")
         body = path.read_text(encoding="utf-8")
-        assert "工具列表（8 个）" in body or "8 个）" in body
+        assert "工具列表（8 个）" in body or "8 个）" in body  # noqa: RUF001 (matching README_zh literal)
         assert "get_account_numbers" in body
