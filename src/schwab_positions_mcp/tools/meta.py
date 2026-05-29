@@ -54,6 +54,7 @@ def get_server_info_impl(_payload: dict[str, Any] | None = None) -> dict[str, An
         "trade_endpoints_exposed": False,
         "tools": [
             "get_accounts",
+            "get_account_numbers",
             "get_account_positions",
             "get_orders_history",
             "get_transactions",

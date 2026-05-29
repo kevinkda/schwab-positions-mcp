@@ -22,13 +22,14 @@ which exposes Schwab Market Data Production endpoints. The two repos are
 deliberately split so the trading-account credential set lives in its own
 process and config directory.
 
-## Tools (7)
+## Tools (8)
 
-### Account / portfolio (5)
+### Account / portfolio (6)
 
 | Tool                     | Description                                                                                          |
 | ------------------------ | ---------------------------------------------------------------------------------------------------- |
 | `get_accounts`           | List all linked Schwab accounts. Optional `fields=["positions"]` expands holdings inline.            |
+| `get_account_numbers`    | Map plaintext `accountNumber` to encrypted `account_hash` (required by every other tool below).      |
 | `get_account_positions`  | Fetch one account's holdings + balances; persists a positions snapshot to local DuckDB.              |
 | `get_orders_history`     | Return orders between two timezone-aware datetimes (Schwab caps lookback at 60 days).                |
 | `get_transactions`       | Return transactions between two ISO dates (TRADE / DIVIDEND_OR_INTEREST / etc).                      |

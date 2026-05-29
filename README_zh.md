@@ -15,13 +15,14 @@
 暴露 Schwab Market Data Production 接口。两仓刻意分开，让交易账户凭据集
 独立进程、独立配置目录。
 
-## 工具列表（7 个）
+## 工具列表（8 个）
 
-### 账户 / 持仓（5 个）
+### 账户 / 持仓（6 个）
 
 | 工具                     | 说明                                                                                       |
 | ------------------------ | ------------------------------------------------------------------------------------------ |
 | `get_accounts`           | 列出所有关联的 Schwab 账户；可选 `fields=["positions"]` 内联展开持仓。                     |
+| `get_account_numbers`    | 返回 `accountNumber` → 加密 `account_hash`（即 `hashValue`）映射，是其余工具的前置依赖。   |
 | `get_account_positions`  | 获取单账户持仓 + 余额；并把持仓快照写入本地 DuckDB。                                       |
 | `get_orders_history`     | 查询两个时区感知 datetime 之间的历史订单（Schwab 服务端最长 60 天回溯）。                  |
 | `get_transactions`       | 查询两个 ISO 日期之间的交易（TRADE / DIVIDEND_OR_INTEREST 等）。                           |
