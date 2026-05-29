@@ -26,13 +26,14 @@ def _resp(status: int = 200, payload: Any = None) -> MagicMock:
 
 
 class TestServerToolSurface:
-    def test_seven_tools_registered(self) -> None:
+    def test_eight_tools_registered(self) -> None:
         info = meta.get_server_info_impl()
-        assert len(info["tools"]) == 7
+        assert len(info["tools"]) == 8
 
     def test_server_module_has_all_tool_callables(self) -> None:
         for name in (
             "get_accounts",
+            "get_account_numbers",
             "get_account_positions",
             "get_orders_history",
             "get_transactions",

@@ -51,11 +51,12 @@ class TestGetServerInfo:
         out = meta.get_server_info_impl()
         assert out["version"] == __version__
 
-    def test_lists_7_tools(self) -> None:
+    def test_lists_8_tools(self) -> None:
         out = meta.get_server_info_impl()
-        assert len(out["tools"]) == 7
+        assert len(out["tools"]) == 8
         for name in (
             "get_accounts",
+            "get_account_numbers",
             "get_account_positions",
             "get_orders_history",
             "get_transactions",
