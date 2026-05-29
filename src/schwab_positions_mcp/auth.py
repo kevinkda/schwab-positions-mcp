@@ -135,7 +135,7 @@ def _run_login_flow(args: argparse.Namespace) -> int:
         callback_url=cfg.callback_url,
         token_path=str(cfg.token_path),
         asyncio=False,
-        enforce_enums=True,
+        enforce_enums=False,
         token_write_func=make_token_write_func(cfg.token_path),
     )
     print(f"OK — token persisted at {cfg.token_path}", file=sys.stderr)
@@ -159,7 +159,7 @@ def _run_manual_flow(args: argparse.Namespace) -> int:
         token_path=str(cfg.token_path),
         asyncio=False,
         token_write_func=make_token_write_func(cfg.token_path),
-        enforce_enums=True,
+        enforce_enums=False,
     )
     print(f"OK — token persisted at {cfg.token_path}", file=sys.stderr)
     return 0
