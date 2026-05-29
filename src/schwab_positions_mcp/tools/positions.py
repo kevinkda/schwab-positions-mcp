@@ -1,4 +1,21 @@
-"""``get_account_positions`` — return one account's positions and write a snapshot."""
+"""``get_account_positions`` — return one account's positions and write a snapshot.
+
+## Balances field guide (LLM hint)
+
+Schwab returns 3 balance snapshots per account; this tool surfaces 2 of them:
+
+- ``current_balances``: real-time account state (use for "what's my buying
+  power right now?"). Fields: cashAvailableForTrading, buyingPower,
+  marginBalance, equity, etc.
+- ``initial_balances``: snapshot taken at the start of the trading day
+  (use for daily P&L baseline). Fields mirror currentBalances.
+- (``projectedBalances``: balances after pending settlements; not
+  surfaced here — use ``get_account_summary`` if you need them.)
+
+For most LLM agent queries asking about "my balance" or "buying power",
+use ``current_balances.buyingPower`` and ``current_balances.equity``.
+``initial_balances`` is rarely needed in agent flows.
+"""
 
 from __future__ import annotations
 
