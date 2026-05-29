@@ -7,6 +7,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-05-29
+
+### Added
+
+- **(P1)** ``GetOrdersHistoryInput.from_entered_time`` and
+  ``GetTransactionsInput.start_date`` now reject inputs older than the
+  Schwab Trader API's 60-day lookback window at the Pydantic layer, so
+  out-of-window requests fail fast client-side with a self-describing
+  ``ValueError`` (cutoff + offending value surfaced verbatim) instead of
+  consuming an HTTP round-trip just to receive an opaque server-side
+  400. Two new module-level constants ``_ORDERS_LOOKBACK_DAYS`` and
+  ``_TRANSACTIONS_LOOKBACK_DAYS`` make the policy easy to tune. The
+  validators run after ``_require_tzaware`` (orders side) so the value
+  is already tz-aware UTC before lookback comparison.
+- **(P2)** ``tools/summary.py`` and ``tools/positions.py`` module
+  docstrings now include a "Balances field guide (LLM hint)" section
+  documenting Schwab's three balance snapshots (``currentBalances`` /
+  ``initialBalances`` / ``projectedBalances``) and steering agents to
+  the right field for "what's my buying power" vs "daily P&L baseline"
+  vs "post-settlement" questions.
+- **(P3)** New ``tests/test_live_smoke.py`` — 4 live-token e2e smoke
+  tests (``health_check``, ``get_account_numbers``,
+  ``get_account_positions``, lookback boundary). **Skipped by default**;
+  enable with ``SCHWAB_POSITIONS_LIVE_E2E=1 uv run pytest
+  tests/test_live_smoke.py -v``. Read-only by design — they consume
+  rate-limit budget but never mutate state.
+- ``tests/test_v0_1_2_lookback_validation.py`` — 14 new regression
+  tests covering 30 / 59 / 60 / 61 / 90 / 120 / 180-day boundaries,
+  error-message ergonomics (cutoff ISO + offending value present),
+  validator ordering invariant (``_require_tzaware`` runs before
+  ``_within_orders_lookback``), and double-bad-input behaviour
+  (``end < start`` AND ``start`` out-of-window for transactions).
+
+### Compatibility
+
+- **No breaking changes.** Pure patch release — the v0.1.1 tool surface
+  is preserved as a strict subset of v0.1.2 (every existing tool name,
+  argument, and response shape unchanged). Inputs that were valid under
+  v0.1.1 ``from_entered_time`` / ``start_date`` constraints (i.e. within
+  60 days) continue to pass; only previously-doomed out-of-window
+  requests now fail one round-trip earlier.
+- All 5 read-only boundary layers preserved (whitelist / startup
+  warning / read-only tool surface / CI grep gate / mutation-reject
+  test). No new tool added; no whitelist change; no new dependency.
+- 192 tests pass (178 from v0.1.1 + 14 v0.1.2 regression tests) plus
+  4 live-smoke tests skipped by default. Coverage **92.22%** (vs
+  91.98% v0.1.1 baseline — does not regress).
+
+### Reported by
+
+- Real-world ``schwab-positions-mcp`` sync-portfolio testing on
+  2026-05-29 surfaced (a) opaque server-side 400s on out-of-window
+  history queries that wasted a round-trip and (b) LLM-agent confusion
+  on which balance snapshot to use. P3 live-smoke harness added so
+  future sibling sessions can verify auth + 3 read paths against a
+  real token without waiting for the next end-to-end portfolio sync.
+
 ## [0.1.1] - 2026-05-29
 
 ### Fixed
@@ -104,6 +161,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - See [`docs/SECURITY.md`](docs/SECURITY.md) for the threat model and
   5-layer boundary rationale.
 
-[Unreleased]: https://github.com/kevinkda/schwab-positions-mcp/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/kevinkda/schwab-positions-mcp/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/kevinkda/schwab-positions-mcp/releases/tag/v0.1.2
 [0.1.1]: https://github.com/kevinkda/schwab-positions-mcp/releases/tag/v0.1.1
 [0.1.0]: https://github.com/kevinkda/schwab-positions-mcp/releases/tag/v0.1.0
