@@ -21,9 +21,10 @@ def get_orders_history_impl(payload: dict[str, Any]) -> dict[str, Any]:
     if args.max_results is not None:
         kwargs["max_results"] = args.max_results
     if args.status is not None:
-        # schwab-py expects an enum; we pass the raw string and rely on
-        # enforce_enums=False at higher precedence; if rejected, the error
-        # surfaces normally.
+        # schwab-py accepts strings when ``enforce_enums=False`` (set in
+        # ``_build_client``). Pydantic ``Literal[_OrderStatus]`` in
+        # ``models.py`` already constrains the value to a known Schwab
+        # status, so this kwarg is safe to forward verbatim.
         kwargs["status"] = args.status
 
     response = client.get_orders_for_account(args.account_hash, **kwargs)

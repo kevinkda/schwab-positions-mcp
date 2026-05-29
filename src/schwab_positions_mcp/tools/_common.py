@@ -60,12 +60,25 @@ def _build_client() -> ReadOnlySchwabClient:
     # Local import — schwab-py is heavy and has its own logging side-effects.
     from schwab.auth import client_from_token_file
 
+    # We disable schwab-py's runtime enum enforcement on purpose:
+    #   1. Pydantic ``Literal[...]`` constraints in ``models.py`` already
+    #      restrict every enum-valued input (``fields`` / ``status`` /
+    #      transaction ``types``) to a known Schwab vocabulary, so the
+    #      schwab-py layer would only re-do that check.
+    #   2. MCP tool inputs arrive as JSON strings. Wrapping them in
+    #      ``schwab.client.base.*`` enums at this layer would couple us to
+    #      schwab-py private paths (the public ``schwab.client`` re-export
+    #      does not expose ``Account.Fields`` etc. for direct lookup).
+    #   3. With ``enforce_enums=True`` the same string the user already
+    #      validated through Pydantic was rejected at the schwab-py boundary
+    #      with an opaque ``expected type "Fields", got type "str"`` error
+    #      — see B1 in CHANGELOG v0.1.1.
     raw_client = client_from_token_file(
         api_key=api_key,
         app_secret=app_secret,
         token_path=str(token_path),
         asyncio=False,
-        enforce_enums=True,
+        enforce_enums=False,
     )
     return ReadOnlySchwabClient(raw_client)
 
