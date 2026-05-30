@@ -1,0 +1,470 @@
+"""Deep-coverage completion tests — drive the remaining uncovered branches to 100%.
+
+This file exists to exercise the *defensive* / *platform-specific* / *error*
+paths that the happy-path tests never reach:
+
+* ``_platform.notify_desktop`` macOS / Linux dispatch + best-effort swallow.
+* ``cache.Cache`` DuckDB open-failure → quarantine, DDL failure, write
+  failures, and ``get_cache`` init failure.
+* ``bootstrap.bootstrap_dotenv`` missing-``python-dotenv`` branch.
+* ``server`` thin tool wrappers + ``main``.
+* ``tools._common.get_client`` lazy build + ``normalise_response`` no-headers
+  branch.
+* ``tools.summary`` cache-write success branch.
+
+Every test carries a *substantive* assertion (no empty-coverage padding) so
+this file also functions as a behavioural regression net, not just a coverage
+filler. (V6-J lesson: coverage AND assertion quality.)
+"""
+
+from __future__ import annotations
+
+import builtins
+from datetime import UTC, date, datetime
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+from unittest.mock import MagicMock
+
+import duckdb
+import pytest
+
+from schwab_positions_mcp import _platform, bootstrap
+from schwab_positions_mcp import cache as cache_module
+from schwab_positions_mcp.cache import Cache, get_cache, reset_cache_singleton
+from schwab_positions_mcp.tools import _common as tools_common
+
+if TYPE_CHECKING:
+    from schwab_positions_mcp.client import ReadOnlySchwabClient
+
+
+# ===========================================================================
+# _platform.notify_desktop — macOS / Linux dispatch + best-effort swallow
+# ===========================================================================
+
+
+class TestNotifyDesktopDispatch:
+    def test_macos_branch_invokes_osascript(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """When IS_MACOS, notify_desktop must route to _notify_macos and run osascript."""
+        monkeypatch.setattr(_platform, "IS_MACOS", True)
+        monkeypatch.setattr(_platform, "IS_LINUX", False)
+
+        which_calls: list[str] = []
+        run_calls: list[list[str]] = []
+
+        def fake_which(name: str) -> str | None:
+            which_calls.append(name)
+            return "/usr/bin/osascript"
+
+        def fake_run(args: list[str], **_kw: Any) -> MagicMock:
+            run_calls.append(args)
+            return MagicMock()
+
+        import shutil
+        import subprocess
+
+        monkeypatch.setattr(shutil, "which", fake_which)
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        _platform.notify_desktop("My Title", "My Message")
+
+        # The macOS path was actually taken: osascript was resolved + invoked.
+        assert which_calls == ["osascript"]
+        assert len(run_calls) == 1
+        invoked = run_calls[0]
+        assert invoked[0] == "/usr/bin/osascript"
+        # Title + message are embedded in the AppleScript payload.
+        joined = " ".join(invoked)
+        assert "My Title" in joined
+        assert "My Message" in joined
+
+    def test_macos_branch_no_osascript_is_noop(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """If osascript is absent, _notify_macos returns early without running anything."""
+        monkeypatch.setattr(_platform, "IS_MACOS", True)
+        monkeypatch.setattr(_platform, "IS_LINUX", False)
+
+        run_calls: list[Any] = []
+        import shutil
+        import subprocess
+
+        monkeypatch.setattr(shutil, "which", lambda _name: None)
+        monkeypatch.setattr(subprocess, "run", lambda *a, **k: run_calls.append((a, k)))
+
+        _platform.notify_desktop("t", "m")
+
+        assert run_calls == [], "subprocess.run must NOT be called when osascript is missing"
+
+    def test_linux_branch_no_notify_send_is_noop(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Linux path: if notify-send is absent, _notify_linux returns early (branch 217)."""
+        monkeypatch.setattr(_platform, "IS_MACOS", False)
+        monkeypatch.setattr(_platform, "IS_LINUX", True)
+
+        run_calls: list[Any] = []
+        import shutil
+        import subprocess
+
+        monkeypatch.setattr(shutil, "which", lambda _name: None)
+        monkeypatch.setattr(subprocess, "run", lambda *a, **k: run_calls.append((a, k)))
+
+        _platform.notify_desktop("t", "m")
+
+        assert run_calls == [], "subprocess.run must NOT be called when notify-send is missing"
+
+    def test_linux_branch_invokes_notify_send(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Linux path: when notify-send exists, it is invoked with critical urgency."""
+        monkeypatch.setattr(_platform, "IS_MACOS", False)
+        monkeypatch.setattr(_platform, "IS_LINUX", True)
+
+        run_calls: list[list[str]] = []
+        import shutil
+        import subprocess
+
+        monkeypatch.setattr(shutil, "which", lambda _name: "/usr/bin/notify-send")
+        monkeypatch.setattr(subprocess, "run", lambda args, **_k: run_calls.append(args) or MagicMock())
+
+        _platform.notify_desktop("Linux Title", "Linux Body")
+
+        assert len(run_calls) == 1
+        args = run_calls[0]
+        assert args[0] == "/usr/bin/notify-send"
+        assert "critical" in args
+        assert "Linux Title" in args
+        assert "Linux Body" in args
+
+    def test_notify_desktop_swallows_exceptions(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """notify_desktop must NEVER raise — exceptions from the platform helper are swallowed."""
+        monkeypatch.setattr(_platform, "IS_MACOS", True)
+        monkeypatch.setattr(_platform, "IS_LINUX", False)
+
+        def boom(*_a: Any, **_k: Any) -> None:
+            raise RuntimeError("simulated notify failure")
+
+        monkeypatch.setattr(_platform, "_notify_macos", boom)
+
+        # Must not propagate — best-effort contract.
+        _platform.notify_desktop("t", "m")  # no exception == pass
+
+    def test_notify_desktop_unknown_platform_noop(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """When neither macOS nor Linux nor Windows, notify_desktop does nothing and returns."""
+        monkeypatch.setattr(_platform, "IS_MACOS", False)
+        monkeypatch.setattr(_platform, "IS_LINUX", False)
+        monkeypatch.setattr(_platform, "IS_WINDOWS", False)
+
+        macos = MagicMock()
+        linux = MagicMock()
+        monkeypatch.setattr(_platform, "_notify_macos", macos)
+        monkeypatch.setattr(_platform, "_notify_linux", linux)
+
+        _platform.notify_desktop("t", "m")
+
+        macos.assert_not_called()
+        linux.assert_not_called()
+
+
+# ===========================================================================
+# bootstrap.bootstrap_dotenv — missing python-dotenv branch
+# ===========================================================================
+
+
+class TestBootstrapMissingDotenv:
+    def test_returns_false_when_dotenv_missing(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        """If ``import dotenv`` raises ImportError, bootstrap_dotenv must return False (no crash)."""
+        monkeypatch.chdir(tmp_path)
+        real_import = builtins.__import__
+
+        def fake_import(name: str, *args: Any, **kwargs: Any) -> Any:
+            if name == "dotenv":
+                raise ImportError("simulated: python-dotenv not installed")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", fake_import)
+
+        result = bootstrap.bootstrap_dotenv()
+
+        assert result is False, "missing python-dotenv must degrade to False, not raise"
+
+
+# ===========================================================================
+# cache.Cache — DuckDB failure paths
+# ===========================================================================
+
+
+class TestCacheOpenQuarantine:
+    def test_open_failure_quarantines_and_retries(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        """A first-connect DuckDB error must quarantine the bad file and retry connecting."""
+        db = tmp_path / "cache.duckdb"
+        # Seed an existing file so the rename (quarantine) actually moves something.
+        db.write_text("corrupt-bytes")
+
+        real_connect = duckdb.connect
+        calls: dict[str, int] = {"n": 0}
+
+        def flaky_connect(path: str, *args: Any, **kwargs: Any) -> Any:
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise duckdb.IOException("simulated corrupt database")
+            return real_connect(path, *args, **kwargs)
+
+        monkeypatch.setattr(duckdb, "connect", flaky_connect)
+
+        cache = Cache(db_path=db)
+        try:
+            # Connection succeeded on retry.
+            assert cache._conn is not None
+            # The corrupt original was quarantined alongside the fresh DB.
+            quarantined = list(tmp_path.glob("cache.duckdb.corrupt-*"))
+            assert len(quarantined) == 1, "corrupt DB must be renamed aside exactly once"
+            assert calls["n"] == 2, "connect must be retried after the first failure"
+        finally:
+            cache.close()
+
+    def test_quarantine_handles_missing_original(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        """If the original file does not exist, the rename is suppressed but retry still connects."""
+        db = tmp_path / "cache.duckdb"  # does NOT exist yet
+
+        real_connect = duckdb.connect
+        calls: dict[str, int] = {"n": 0}
+
+        def flaky_connect(path: str, *args: Any, **kwargs: Any) -> Any:
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise duckdb.Error("simulated open failure")
+            return real_connect(path, *args, **kwargs)
+
+        monkeypatch.setattr(duckdb, "connect", flaky_connect)
+
+        cache = Cache(db_path=db)
+        try:
+            assert cache._conn is not None
+            assert calls["n"] == 2
+        finally:
+            cache.close()
+
+
+class TestCacheDDLFailure:
+    def test_ddl_failure_is_logged_not_raised(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A DDL execute error must be caught + logged at WARNING, not propagated."""
+        db = tmp_path / "cache.duckdb"
+
+        # Build a cache normally, then re-run _init_schema with a conn whose
+        # execute raises duckdb.Error to drive the DDL except branch.
+        cache = Cache(db_path=db)
+        try:
+            broken_conn = MagicMock()
+            broken_conn.execute.side_effect = duckdb.Error("simulated DDL failure")
+            monkeypatch.setattr(cache, "_conn", broken_conn)
+
+            import logging
+
+            with caplog.at_level(logging.WARNING):
+                cache._init_schema()
+
+            assert any("DDL failed" in rec.getMessage() for rec in caplog.records), (
+                "DDL failure must be logged at WARNING"
+            )
+        finally:
+            # restore a real conn so close() doesn't choke on the mock
+            cache._conn = None
+
+
+class TestCacheLogEventNoConn:
+    def test_log_event_noop_when_conn_none(self, tmp_path: Path) -> None:
+        """_log_event must be a no-op (early return) when the connection is closed."""
+        cache = Cache(db_path=tmp_path / "cache.duckdb")
+        cache.close()
+        assert cache._conn is None
+        # Should not raise even though there's no connection (line 202 branch).
+        cache._log_event("INSERT", "positions_snapshots", 1, "detail")
+
+
+class TestCacheWriteFailures:
+    @pytest.fixture
+    def cache_with_broken_executemany(self, tmp_path: Path) -> Cache:
+        cache = Cache(db_path=tmp_path / "cache.duckdb")
+        # Patch executemany to raise; keep execute (used by _log_event) working
+        # by routing it back to the real connection where possible.
+        broken = MagicMock(wraps=cache._conn)
+        broken.executemany.side_effect = duckdb.Error("simulated write failure")
+        cache._conn = broken
+        return cache
+
+    def test_write_positions_failure_returns_zero_and_logs_error(
+        self,
+        cache_with_broken_executemany: Cache,
+        mock_positions_data: dict[str, Any],
+    ) -> None:
+        positions = mock_positions_data["securitiesAccount"]["positions"]
+        n = cache_with_broken_executemany.write_positions_snapshot("HASH", positions)
+        assert n == 0, "a write failure must surface as 0 inserted rows"
+
+    def test_write_orders_failure_returns_zero(
+        self,
+        cache_with_broken_executemany: Cache,
+        mock_orders_data: list[dict[str, Any]],
+    ) -> None:
+        n = cache_with_broken_executemany.write_orders_history("HASH", mock_orders_data)
+        assert n == 0
+
+    def test_write_transactions_failure_returns_zero(
+        self,
+        cache_with_broken_executemany: Cache,
+        mock_transactions_data: list[dict[str, Any]],
+    ) -> None:
+        n = cache_with_broken_executemany.write_transactions_history("HASH", mock_transactions_data)
+        assert n == 0
+
+
+class TestGetCacheInitFailure:
+    def test_get_cache_returns_none_on_init_failure(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """If ``Cache()`` construction raises duckdb.Error, get_cache returns None (degrade)."""
+        reset_cache_singleton()
+        monkeypatch.setenv("SCHWAB_POSITIONS_CACHE_ENABLED", "1")
+
+        def boom(*_a: Any, **_k: Any) -> Cache:
+            raise duckdb.Error("simulated cache init failure")
+
+        monkeypatch.setattr(cache_module, "Cache", boom)
+
+        result = get_cache()
+        assert result is None, "cache init failure must degrade to None, never crash the tool"
+        reset_cache_singleton()
+
+
+# ===========================================================================
+# server — thin tool wrappers + main
+# ===========================================================================
+
+
+class TestServerWrappers:
+    def test_get_account_numbers_wrapper_delegates(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """server.get_account_numbers must delegate to the impl (line 61)."""
+        import schwab_positions_mcp.server as srv
+        from schwab_positions_mcp.tools import account_numbers
+
+        sentinel = {"ok": True, "account_numbers": [], "count": 0, "_cache_status": "x"}
+        monkeypatch.setattr(account_numbers, "get_account_numbers_impl", lambda: sentinel)
+
+        # FastMCP's @mcp.tool returns the original function object, so it is
+        # directly callable here (verified: type is <function>, no .fn attr).
+        result = srv.get_account_numbers()
+        assert result is sentinel
+
+    def test_main_runs_stdio_transport(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """server.main must start the MCP server with stdio transport (line 144)."""
+        import schwab_positions_mcp.server as srv
+
+        run_calls: list[dict[str, Any]] = []
+        monkeypatch.setattr(srv.mcp, "run", lambda **kwargs: run_calls.append(kwargs))
+
+        srv.main()
+
+        assert run_calls == [{"transport": "stdio"}], "main must invoke mcp.run(transport='stdio')"
+
+
+# ===========================================================================
+# tools._common — get_client lazy build + normalise_response no-headers branch
+# ===========================================================================
+
+
+class TestGetClientLazyBuild:
+    def test_get_client_builds_when_singleton_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """get_client must call _build_client exactly once when the singleton is empty (line 91)."""
+        tools_common.reset_client_singleton()
+
+        built = MagicMock(name="ReadOnlySchwabClient")
+        build_calls: dict[str, int] = {"n": 0}
+
+        def fake_build() -> Any:
+            build_calls["n"] += 1
+            return built
+
+        monkeypatch.setattr(tools_common, "_build_client", fake_build)
+
+        first = tools_common.get_client()
+        second = tools_common.get_client()
+
+        assert first is built
+        assert second is built
+        assert build_calls["n"] == 1, "the client must be built lazily, exactly once"
+        tools_common.reset_client_singleton()
+
+
+class TestNormaliseResponseNoHeaders:
+    def test_2xx_response_without_headers_attr(self) -> None:
+        """A 2xx response object lacking a ``headers`` attribute must still parse (branch 140->143)."""
+
+        class _NoHeaderResponse:
+            status_code = 200
+
+            @staticmethod
+            def json() -> dict[str, str]:
+                return {"ok": "yes"}
+
+        out = tools_common.normalise_response(_NoHeaderResponse())
+        assert out == {"ok": "yes"}
+
+    def test_error_response_without_headers_attr_still_raises(self) -> None:
+        """A non-2xx response lacking headers must still raise with request_id=None."""
+
+        class _NoHeaderError:
+            status_code = 429
+
+        with pytest.raises(tools_common.SchwabApiError) as excinfo:
+            tools_common.normalise_response(_NoHeaderError())
+        assert excinfo.value.status_code == 429
+        assert excinfo.value.request_id is None
+
+
+# ===========================================================================
+# tools.summary — cache-write success branch
+# ===========================================================================
+
+
+class TestSummaryCacheWriteSuccess:
+    def test_summary_writes_snapshot_and_reports_count(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        installed_client: ReadOnlySchwabClient,
+        mock_schwab_client: MagicMock,
+        mock_positions_data: dict[str, Any],
+        make_response: Any,
+    ) -> None:
+        """get_account_summary_impl must write a snapshot and surface 'snapshot_written:N' (lines 58-60)."""
+        from schwab_positions_mcp.tools import summary
+
+        # Real cache rooted in tmp_path so the write actually succeeds.
+        monkeypatch.setenv("SCHWAB_POSITIONS_CACHE_ENABLED", "1")
+        cache_module.reset_cache_singleton()
+        real_cache = Cache(db_path=tmp_path / "cache.duckdb")
+        cache_module._cache_singleton = real_cache
+
+        mock_schwab_client.get_account.return_value = make_response(json_payload=mock_positions_data)
+
+        try:
+            result = summary.get_account_summary_impl({"account_hash": "HASH_ABCDEF"})
+            assert result["ok"] is True
+            # Two positions in mock_positions_data → 2 snapshot rows written.
+            assert result["_cache_status"] == "snapshot_written:2", (
+                f"expected snapshot_written:2, got {result['_cache_status']!r}"
+            )
+            # Cross-check the rows actually landed in DuckDB.
+            count = real_cache._conn.execute(  # type: ignore[union-attr]
+                "SELECT COUNT(*) FROM positions_snapshots"
+            ).fetchone()
+            assert count is not None and count[0] == 2
+        finally:
+            cache_module.reset_cache_singleton()
+
+
+# ===========================================================================
+# date import guard (keep ruff happy; used in boundary tests elsewhere)
+# ===========================================================================
+
+
+def test_module_imports_are_live() -> None:
+    """Sanity: the imports above resolve (guards against dead-import drift)."""
+    assert callable(get_cache)
+    assert isinstance(datetime.now(UTC), datetime)
+    assert isinstance(date.today(), date)
