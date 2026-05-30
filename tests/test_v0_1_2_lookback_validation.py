@@ -122,7 +122,7 @@ class TestOrdersLookback:
         aware datetimes and crashing with a TypeError instead of a
         clean ValueError.
         """
-        naive_old = datetime(2024, 1, 1)  # noqa: DTZ001 — intentional naive
+        naive_old = datetime(2024, 1, 1)  # intentional naive datetime (DTZ not enabled)
         to_time = datetime.now(UTC)
         with pytest.raises(ValueError, match="timezone-aware"):
             GetOrdersHistoryInput(

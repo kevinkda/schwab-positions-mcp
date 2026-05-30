@@ -97,7 +97,7 @@ repos:
     hooks:
       - id: mypy
         name: mypy (--strict on src/)
-        entry: uv run mypy --strict --ignore-missing-imports
+        entry: uv run mypy --strict
         language: system
         types: [python]
         files: ^src/
