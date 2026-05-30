@@ -7,6 +7,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-05-31
+
+### Added
+
+- **100% test coverage** (line + branch) enforced via
+  ``[tool.coverage.report] fail_under = 100``. Closed the remaining gaps
+  in ``_platform.py`` (macOS/Linux desktop-notification dispatch + best-effort
+  swallow), ``cache.py`` (DuckDB open-failure → quarantine/retry, DDL-failure
+  logging, write-failure error events, ``get_cache`` init-failure degrade),
+  ``bootstrap.py`` (missing ``python-dotenv`` branch), ``server.py`` (tool
+  wrapper plus ``main`` stdio transport), ``tools/_common.py`` (lazy client
+  build and headerless-response normalisation), and ``tools/summary.py``
+  (cache-write success path) with ``tests/test_coverage_completion.py``.
+- **OWASP Top 10 security suites — three editions:**
+  - ``tests/test_owasp_2017.py`` — A1 Injection (SQL/command/path payloads
+    rejected by the ``account_hash`` pattern + parameterised DuckDB writes),
+    A2 Broken Authentication, A3 Sensitive Data Exposure (``redact()``),
+    A5 Broken Access Control (5-layer read-only boundary), A6 Misconfiguration
+    (0o600/0o700 perms), A8 Insecure Deserialization, A9 Vulnerable Components
+    (bounded deps; Dependabot/pip-audit note), A10 Logging; A4 XXE and A7 XSS
+    documented as N/A with source-level drift guards.
+  - ``tests/test_owasp_2021.py`` — A01–A10 incl. A04 Insecure Design and
+    A10 SSRF (URL/metadata-endpoint payloads cannot be smuggled through
+    ``account_hash``; our layer synthesises no outbound URL).
+  - ``tests/test_owasp_2025.py`` — Zero-Trust access control, crypto hygiene
+    - token rotation signal, **prompt-injection** (tool args/descriptions
+    cannot coax the LLM into a write action; injected text is inert data),
+    insecure-design, safe env defaults, token lifecycle, data integrity,
+    structured logging, and cloud-native SSRF.
+- **Penetration-test suite** ``tests/test_pentest.py`` — authentication-bypass,
+  privilege-escalation (read-only → write), data-exfiltration, and
+  ``ReadOnlySchwabClient.__getattr__`` bypass attempts (dunder / reflection /
+  indirect ``getattr`` / ``__dict__`` / ``dir()`` enumeration all denied).
+- **Exception-path suite** ``tests/test_exception.py`` — every HTTP-error and
+  ``except duckdb.Error`` branch triggered; exception messages verified to
+  never leak token / API-key / account material; post-exception cache
+  consistency; nested/chained-exception recovery.
+- **Boundary suite** ``tests/test_boundary.py`` — ``account_hash`` length
+  (8/128 min-max), ``max_results`` (1/3000/0/negative/oversized), ``symbol``
+  max-length (32), positions-list size (empty/single/2000), DuckDB numeric
+  extremes (1e300 / inf / nan / negative quantity), and date-order edges.
+
+### Changed
+
+- CI coverage gate raised from **85% → 100%** in ``pyproject.toml`` (the
+  reusable ``mcp-ci-templates`` workflow enforces each repo's own
+  ``fail_under`` via ``uv run pytest --cov``). schwab-positions-mcp is the
+  first repo in the ecosystem to enforce a 100% gate.
+
+### Compatibility
+
+- **No breaking changes.** Test/hardening-only release — zero source-behaviour
+  changes to the tool surface, white-list, or response shapes.
+- All 5 read-only boundary layers preserved and **strengthened** with new
+  runtime assertions (no weakening).
+- 368 tests pass (192 from v0.1.2 + 176 new) plus 4 live-smoke tests skipped
+  by default. Coverage **100.00%** line + branch (vs 92.22% v0.1.2 baseline).
+
 ## [0.1.2] - 2026-05-29
 
 ### Added
@@ -161,7 +219,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - See [`docs/SECURITY.md`](docs/SECURITY.md) for the threat model and
   5-layer boundary rationale.
 
-[Unreleased]: https://github.com/kevinkda/schwab-positions-mcp/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/kevinkda/schwab-positions-mcp/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/kevinkda/schwab-positions-mcp/releases/tag/v0.1.3
 [0.1.2]: https://github.com/kevinkda/schwab-positions-mcp/releases/tag/v0.1.2
 [0.1.1]: https://github.com/kevinkda/schwab-positions-mcp/releases/tag/v0.1.1
 [0.1.0]: https://github.com/kevinkda/schwab-positions-mcp/releases/tag/v0.1.0
