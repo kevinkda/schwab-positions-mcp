@@ -78,24 +78,28 @@ class TestStartupWarning:
     def test_server_logs_warning_on_import(self, caplog: pytest.LogCaptureFixture) -> None:
         """Layer 2 — importing ``server`` must emit a READ-ONLY warning.
 
-        We import inside the test (and reset the logger handlers) so we can
-        capture the warning even if the module was already imported by a
-        sibling test.
+        We reload the real ``server`` module *inside* the caplog context so the
+        warning is captured from the genuine import-time code path
+        (``server.py`` line ~28), not from a string re-emitted by the test.
+        A previous version of this test manually re-logged the banner, which
+        meant a regression that deleted the import-time ``logger.warning(...)``
+        call would still have passed — a false-green on a security invariant.
         """
-        # Force re-emission by clearing the logger and re-running the
-        # warning path manually via the same call site.
         import importlib
 
         import schwab_positions_mcp.server as srv
 
         with caplog.at_level(logging.WARNING, logger=srv.__name__):
-            # Re-emit the canonical warning to verify the message text.
-            srv.logger.warning(
-                "schwab-positions-mcp starting in READ-ONLY MODE. No trade endpoints exposed. See docs/SECURITY.md."
-            )
-        joined = " ".join(rec.getMessage() for rec in caplog.records)
-        assert "READ-ONLY MODE" in joined
+            importlib.reload(srv)
+
+        warning_records = [rec for rec in caplog.records if rec.levelno == logging.WARNING]
+        joined = " ".join(rec.getMessage() for rec in warning_records)
+        assert "READ-ONLY MODE" in joined, (
+            "Layer 2 regression — reloading server did NOT emit the READ-ONLY "
+            f"startup warning from the real import path. Captured: {joined!r}"
+        )
         assert "SECURITY.md" in joined
+        assert "No trade endpoints exposed" in joined
 
         # Sanity: the module is still importable as expected.
         assert importlib.util.find_spec("schwab_positions_mcp.server") is not None
