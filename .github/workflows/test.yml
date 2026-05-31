@@ -24,3 +24,10 @@ jobs:
     with:
       os-matrix: '["ubuntu-latest", "macos-latest"]'
       python-versions: '["3.11", "3.12"]'
+      # Close the markdownlint CI blind spot: the reusable workflow's
+      # markdownlint job is gated on run-markdownlint (default false), so this
+      # repo's Markdown was never validated in CI. The repo ships
+      # .markdownlint-cli2.jsonc; enable the job here. (run-security-grep stays
+      # at its default false — the read-only boundary is enforced by the
+      # standalone security-grep.yml workflow as documented above.)
+      run-markdownlint: true
