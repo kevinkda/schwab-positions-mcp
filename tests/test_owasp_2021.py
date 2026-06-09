@@ -230,12 +230,14 @@ class TestA05SecurityMisconfiguration:
         assert "No trade endpoints exposed" in joined
 
     def test_cache_enabled_default_is_explicit(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Cache defaults are explicit, not surprising: enabled-by-default, bypass-off-by-default."""
+        """Cache defaults are explicit, not surprising: disabled-by-default (opt-in), bypass-off-by-default."""
         from schwab_positions_mcp.cache import cache_bypass, cache_enabled
 
         monkeypatch.delenv("SCHWAB_POSITIONS_CACHE_ENABLED", raising=False)
         monkeypatch.delenv("SCHWAB_POSITIONS_CACHE_BYPASS", raising=False)
-        assert cache_enabled() is True
+        # v0.1.4: cache is opt-in. Unset env must resolve to disabled so a
+        # fresh install never silently persists account state to disk.
+        assert cache_enabled() is False
         assert cache_bypass() is False
 
 

@@ -23,7 +23,7 @@
 | ------------------------ | ------------------------------------------------------------------------------------------ |
 | `get_accounts`           | 列出所有关联的 Schwab 账户；可选 `fields=["positions"]` 内联展开持仓。                     |
 | `get_account_numbers`    | 返回 `accountNumber` → 加密 `account_hash`（即 `hashValue`）映射，是其余工具的前置依赖。   |
-| `get_account_positions`  | 获取单账户持仓 + 余额；并把持仓快照写入本地 DuckDB。                                       |
+| `get_account_positions`  | 获取单账户持仓 + 余额；若缓存启用则把持仓快照写入本地 DuckDB。                             |
 | `get_orders_history`     | 查询两个时区感知 datetime 之间的历史订单（Schwab 服务端最长 60 天回溯）。                  |
 | `get_transactions`       | 查询两个 ISO 日期之间的交易（TRADE / DIVIDEND_OR_INTEREST 等）。                           |
 | `get_account_summary`    | 单账户聚合：持仓数、总市值、总盈亏、现金、购买力、余额表。                                 |
@@ -91,10 +91,14 @@ uv run python -m schwab_positions_mcp # 等价
 
 ## 缓存
 
-只读快照（持仓 / 订单 / 交易）持久化到本地 DuckDB
+本地 DuckDB 缓存可持久化只读快照（持仓 / 订单 / 交易）到
 `~/.local/state/schwab-positions-mcp/cache.duckdb`，LLM Agent 可基于此
-做"上周到现在变化"类查询而不必反复打 Schwab。可通过
-`SCHWAB_POSITIONS_CACHE_ENABLED=0` 关闭。
+做“上周到现在变化”类查询而不必反复打 Schwab。
+
+缓存**默认关闭（需显式开启）**——不创建 DuckDB 文件，每次工具调用都
+实时打 Schwab。通过 `SCHWAB_POSITIONS_CACHE_ENABLED=true`（也接受
+`1` / `yes` / `on`）显式启用。关闭时工具返回
+`_cache_status: "skipped:disabled"`，响应结构其余不变。
 
 ## 许可证
 

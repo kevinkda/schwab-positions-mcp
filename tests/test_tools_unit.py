@@ -132,6 +132,21 @@ class TestGetAccountPositions:
         assert out["_cache_status"].startswith("snapshot_written:")
         assert out["_cache_status"] == "snapshot_written:2"
 
+    def test_skips_cache_when_disabled(
+        self,
+        installed_client: Any,
+        mock_schwab_client: MagicMock,
+        mock_positions_data: dict[str, Any],
+    ) -> None:
+        # Default mode (autouse conftest pins CACHE_ENABLED=0): cache is a
+        # no-op and the tool reports the disabled status — response shape
+        # otherwise unchanged.
+        mock_schwab_client.get_account.return_value = _resp(200, mock_positions_data)
+        out = positions.get_account_positions_impl({"account_hash": VALID_HASH})
+        assert out["ok"] is True
+        assert out["count"] == 2
+        assert out["_cache_status"] == "skipped:disabled"
+
     def test_invalid_hash_raises_validation(self, installed_client: Any) -> None:
         with pytest.raises(Exception) as excinfo:
             positions.get_account_positions_impl({"account_hash": "x"})

@@ -62,7 +62,20 @@ def _truthy(raw: str | None, *, default: bool) -> bool:
 
 
 def cache_enabled() -> bool:
-    return _truthy(os.environ.get(ENV_CACHE_ENABLED), default=True)
+    """Whether the DuckDB cache is enabled. Default: **False** (disabled).
+
+    The cache is **opt-in**. Set ``SCHWAB_POSITIONS_CACHE_ENABLED`` to one of
+    ``1`` / ``true`` / ``yes`` / ``on`` (case-insensitive) to enable response
+    caching. Any other value — including unset/empty/``0``/``false`` — keeps
+    the cache disabled, in which case :func:`get_cache` returns ``None`` and
+    every tool reports ``_cache_status = "skipped:disabled"``.
+
+    .. versionchanged:: 0.1.4
+       Default flipped from enabled to disabled (opt-in). BREAKING for any
+       consumer that relied on default-on caching — set the env var to
+       restore the previous behavior.
+    """
+    return _truthy(os.environ.get(ENV_CACHE_ENABLED), default=False)
 
 
 def cache_bypass() -> bool:
@@ -361,7 +374,9 @@ _cache_singleton_lock = threading.Lock()
 def get_cache() -> Cache | None:
     """Return the process-wide :class:`Cache` (lazy init).
 
-    Returns ``None`` if caching is disabled via ``SCHWAB_POSITIONS_CACHE_ENABLED=0``.
+    Returns ``None`` when caching is disabled (the default). Caching is
+    opt-in: enable it with ``SCHWAB_POSITIONS_CACHE_ENABLED=1`` (or
+    ``true`` / ``yes`` / ``on``). See :func:`cache_enabled`.
     """
     global _cache_singleton
     if not cache_enabled():

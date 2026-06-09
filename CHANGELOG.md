@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-06-09
+
+### Changed
+
+- ⚠️ **BREAKING (default behavior change): DuckDB cache is now opt-in,
+  disabled by default.** `cache_enabled()` previously defaulted to `True`
+  (cache on unless `SCHWAB_POSITIONS_CACHE_ENABLED=0`); it now defaults to
+  `False`. With no env var set, no DuckDB file is created, no snapshots are
+  written, and every tool reports `_cache_status: "skipped:disabled"`.
+  **To restore the previous default-on caching, set
+  `SCHWAB_POSITIONS_CACHE_ENABLED=true`** (also accepts `1` / `yes` / `on`,
+  case-insensitive). Rationale: least-surprise for fresh installs, zero
+  on-disk footprint until explicitly requested, and deterministic
+  live-API behavior for agents/CI. The tool-return shape is otherwise
+  unchanged — only the `_cache_status` default value changes. First repo
+  in a 5-MCP cross-repo rollout (template for schwab-marketdata-mcp /
+  sec-edgar-mcp / polygon-news-mcp / yfinance-mcp). See
+  `stock-personal/docs/sprints/cache-toggle-design.md`.
+
+### Added
+
+- Cache-toggle test coverage: every truthy token (`1/true/yes/on` +
+  case + whitespace), falsy/unset/empty paths, `get_cache()` returns
+  `None` when disabled or unset, and tool `_cache_status` is
+  `skipped:disabled` in default mode vs `*_written:N` when enabled.
+  Coverage held at 100% (line + branch).
+
+### Migration
+
+- Operators relying on automatic snapshotting (e.g. "what changed since
+  last week" agent queries, or playbooks asserting a cache hit-rate gate)
+  must add `SCHWAB_POSITIONS_CACHE_ENABLED=true` to their environment /
+  `.env` / host `mcp.json` `envFile`.
+
 ## [0.1.3] - 2026-05-31
 
 ### Added

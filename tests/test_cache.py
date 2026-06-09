@@ -96,8 +96,23 @@ class TestCacheEvents:
 
 class TestEnvFlags:
     def test_cache_enabled_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # v0.1.4: cache is opt-in — unset env resolves to DISABLED.
         monkeypatch.delenv("SCHWAB_POSITIONS_CACHE_ENABLED", raising=False)
+        assert cache_enabled() is False
+
+    def test_cache_enabled_empty_string_is_disabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("SCHWAB_POSITIONS_CACHE_ENABLED", "")
+        assert cache_enabled() is False
+
+    @pytest.mark.parametrize("raw", ["1", "true", "TRUE", "True", "yes", "YES", "on", "ON", " on ", "  1  "])
+    def test_cache_enabled_truthy_tokens(self, monkeypatch: pytest.MonkeyPatch, raw: str) -> None:
+        monkeypatch.setenv("SCHWAB_POSITIONS_CACHE_ENABLED", raw)
         assert cache_enabled() is True
+
+    @pytest.mark.parametrize("raw", ["0", "false", "FALSE", "no", "off", "OFF", "nope", "2", "enable"])
+    def test_cache_enabled_falsy_tokens(self, monkeypatch: pytest.MonkeyPatch, raw: str) -> None:
+        monkeypatch.setenv("SCHWAB_POSITIONS_CACHE_ENABLED", raw)
+        assert cache_enabled() is False
 
     def test_cache_enabled_off(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("SCHWAB_POSITIONS_CACHE_ENABLED", "0")
@@ -116,6 +131,12 @@ class TestSingleton:
     def test_get_cache_disabled_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
         reset_cache_singleton()
         monkeypatch.setenv("SCHWAB_POSITIONS_CACHE_ENABLED", "0")
+        assert get_cache() is None
+
+    def test_get_cache_default_unset_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # v0.1.4: with no env set, the cache is opt-in → singleton stays None.
+        reset_cache_singleton()
+        monkeypatch.delenv("SCHWAB_POSITIONS_CACHE_ENABLED", raising=False)
         assert get_cache() is None
 
     def test_get_cache_returns_singleton(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

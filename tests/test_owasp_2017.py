@@ -189,7 +189,7 @@ class TestA2BrokenAuthentication:
 class TestA3SensitiveDataExposure:
     def test_redact_masks_middle_of_secret(self) -> None:
         """_redact must never reveal the full secret — only first/last 2 chars."""
-        secret = "super-secret-correlation-id-1234567890"
+        secret = "super-secret-correlation-id-1234567890"  # pragma: allowlist secret
         masked = tools_common._redact(secret)
         assert secret not in masked
         assert masked == "su…90"

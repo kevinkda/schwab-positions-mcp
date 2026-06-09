@@ -30,7 +30,7 @@ process and config directory.
 | ------------------------ | ---------------------------------------------------------------------------------------------------- |
 | `get_accounts`           | List all linked Schwab accounts. Optional `fields=["positions"]` expands holdings inline.            |
 | `get_account_numbers`    | Map plaintext `accountNumber` to encrypted `account_hash` (required by every other tool below).      |
-| `get_account_positions`  | Fetch one account's holdings + balances; persists a positions snapshot to local DuckDB.              |
+| `get_account_positions`  | Fetch one account's holdings + balances; persists a positions snapshot to local DuckDB when caching is enabled. |
 | `get_orders_history`     | Return orders between two timezone-aware datetimes (Schwab caps lookback at 60 days).                |
 | `get_transactions`       | Return transactions between two ISO dates (TRADE / DIVIDEND_OR_INTEREST / etc).                      |
 | `get_account_summary`    | Compact aggregate: position count, total market value, total P&L, cash, buying power, balances.     |
@@ -100,10 +100,16 @@ usual MCP `command` + `args` shape.
 
 ## Cache
 
-Read-only snapshots (positions / orders / transactions) are persisted to
-a local DuckDB at `~/.local/state/schwab-positions-mcp/cache.duckdb` so
+A local DuckDB cache can persist read-only snapshots (positions / orders
+/ transactions) at `~/.local/state/schwab-positions-mcp/cache.duckdb` so
 your LLM agent can run "what changed since last week" queries without
-hammering Schwab. Disable via `SCHWAB_POSITIONS_CACHE_ENABLED=0`.
+hammering Schwab.
+
+The cache is **disabled by default (opt-in)** — no DuckDB file is created
+and every tool call hits Schwab live. Enable it explicitly with
+`SCHWAB_POSITIONS_CACHE_ENABLED=true` (also accepts `1` / `yes` / `on`).
+When disabled, tools return `_cache_status: "skipped:disabled"`; the
+response shape is otherwise unchanged.
 
 ## License
 
