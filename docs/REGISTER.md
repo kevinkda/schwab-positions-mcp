@@ -103,8 +103,8 @@ are present, else the file mtime), and on any non-zero exit it:
   re-auth command.
 
 Schedule it with cron / launchd / Task Scheduler — see
-[`docs/cron.example`](cron.example) for ready-to-paste snippets (Sunday 20:00
-+ Wednesday 21:00 + a 4-hour fallback).
+[`docs/cron.example`](cron.example) for ready-to-paste snippets
+(Sunday 20:00 + Wednesday 21:00 + a 4-hour fallback).
 
 The MCP `health_check` tool also now reports `token_age_days` and
 `token_expires_in_days` under `checks`, so an agent can surface the countdown
@@ -120,7 +120,6 @@ uv run python -m schwab_positions_mcp.auth login_flow
 # or, if the browser flow is flaky:
 uv run python -m schwab_positions_mcp.auth manual_flow
 ```
-
 
 ## 5. Troubleshooting
 
