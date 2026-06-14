@@ -22,7 +22,7 @@ from typing import Any  # noqa: E402
 from mcp.server.fastmcp import FastMCP  # noqa: E402
 
 from . import __version__ as SERVER_VERSION  # noqa: E402
-from .tools import account_numbers, accounts, meta, orders, positions, summary, transactions  # noqa: E402
+from .tools import account_numbers, accounts, analytics, meta, orders, positions, summary, transactions  # noqa: E402
 
 logger = logging.getLogger(__name__)
 logger.warning("schwab-positions-mcp starting in READ-ONLY MODE. No trade endpoints exposed. See docs/SECURITY.md.")
@@ -122,6 +122,50 @@ def get_transactions(
 )
 def get_account_summary(account_hash: str) -> dict[str, Any]:
     return summary.get_account_summary_impl({"account_hash": account_hash})
+
+
+@mcp.tool(
+    name="get_pnl_analysis",
+    description=(
+        "Read-only derived P&L analytics for one account: per-position cost "
+        "basis / unrealized P&L / unrealized % (cost-basis method: AVERAGE "
+        "COST, since the positions feed exposes only averagePrice — no per-lot "
+        "records for FIFO), a transaction-derived realized P&L over the "
+        "lookback window, and a portfolio roll-up. Pure computation; no "
+        "mutation, no cache write."
+    ),
+)
+def get_pnl_analysis(account_hash: str, realized_lookback_days: int = 60) -> dict[str, Any]:
+    return analytics.get_pnl_analysis_impl(
+        {"account_hash": account_hash, "realized_lookback_days": realized_lookback_days}
+    )
+
+
+@mcp.tool(
+    name="get_concentration_analysis",
+    description=(
+        "Read-only derived concentration analytics for one account: top-N "
+        "weights, Herfindahl-Hirschman Index (HHI), max single-position "
+        "weight, and asset-type exposure (sector exposure is N/A — the Schwab "
+        "positions feed has no GICS sector field). Pure computation; no "
+        "mutation, no cache write."
+    ),
+)
+def get_concentration_analysis(account_hash: str, top_n: int = 5) -> dict[str, Any]:
+    return analytics.get_concentration_analysis_impl({"account_hash": account_hash, "top_n": top_n})
+
+
+@mcp.tool(
+    name="get_cross_account_summary",
+    description=(
+        "Read-only derived cross-account aggregation: discovers all linked "
+        "accounts via get_account_numbers, then merges positions + balances "
+        "into a combined view with per-account share-of-total and symbol-level "
+        "de-duplication. Pure computation; no mutation, no cache write."
+    ),
+)
+def get_cross_account_summary() -> dict[str, Any]:
+    return analytics.get_cross_account_summary_impl()
 
 
 @mcp.tool(

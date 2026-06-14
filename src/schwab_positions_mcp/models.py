@@ -231,3 +231,43 @@ class GetAccountSummaryInput(_StrictModel):
     """Input for ``get_account_summary`` (positions + balances aggregate)."""
 
     account_hash: _AccountHashStr
+
+
+class GetPnlAnalysisInput(_StrictModel):
+    """Input for ``get_pnl_analysis`` (read-only derived P&L analytics).
+
+    Pure derived computation over the read-only positions + transactions
+    feeds — no mutation, no cache write. ``account_hash`` is the only
+    argument; ``realized_lookback_days`` bounds the transaction window used
+    to derive realized P&L (Schwab caps history at 60 days; we clamp here
+    so the derived call stays inside the same boundary as get_transactions).
+    """
+
+    account_hash: _AccountHashStr
+    realized_lookback_days: int = Field(
+        default=_TRANSACTIONS_LOOKBACK_DAYS,
+        ge=1,
+        le=_TRANSACTIONS_LOOKBACK_DAYS,
+        description=(
+            "Window (days back from today) over which SELL trades are scanned "
+            f"to derive realized P&L. 1..{_TRANSACTIONS_LOOKBACK_DAYS} "
+            "(Schwab history cap)."
+        ),
+    )
+
+
+class GetConcentrationAnalysisInput(_StrictModel):
+    """Input for ``get_concentration_analysis`` (read-only derived analytics).
+
+    Pure derived computation over the read-only positions feed — no mutation,
+    no cache write. ``top_n`` controls how many of the largest holdings are
+    surfaced in the ``top_holdings`` breakdown.
+    """
+
+    account_hash: _AccountHashStr
+    top_n: int = Field(
+        default=5,
+        ge=1,
+        le=50,
+        description="How many largest holdings to surface in top_holdings (1..50).",
+    )

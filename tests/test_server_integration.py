@@ -26,9 +26,9 @@ def _resp(status: int = 200, payload: Any = None) -> MagicMock:
 
 
 class TestServerToolSurface:
-    def test_eight_tools_registered(self) -> None:
+    def test_eleven_tools_registered(self) -> None:
         info = meta.get_server_info_impl()
-        assert len(info["tools"]) == 8
+        assert len(info["tools"]) == 11
 
     def test_server_module_has_all_tool_callables(self) -> None:
         for name in (
@@ -38,6 +38,9 @@ class TestServerToolSurface:
             "get_orders_history",
             "get_transactions",
             "get_account_summary",
+            "get_pnl_analysis",
+            "get_concentration_analysis",
+            "get_cross_account_summary",
             "health_check",
             "get_server_info",
         ):
@@ -119,6 +122,44 @@ class TestServerToolSurface:
         )
         assert out["ok"] is True
         assert out["summary"]["position_count"] == 2
+
+    def test_get_pnl_analysis_via_server(
+        self,
+        installed_client: Any,
+        mock_schwab_client: MagicMock,
+        mock_positions_data: dict[str, Any],
+    ) -> None:
+        mock_schwab_client.get_account.return_value = _resp(200, mock_positions_data)
+        mock_schwab_client.get_transactions.return_value = _resp(200, [])
+        out = server_module.get_pnl_analysis(account_hash="ACCT_HASH_AAAAAAAAAAAA")
+        assert out["ok"] is True
+        assert out["cost_basis_method"] == "average_cost"
+        assert out["portfolio"]["position_count"] == 2
+
+    def test_get_concentration_analysis_via_server(
+        self,
+        installed_client: Any,
+        mock_schwab_client: MagicMock,
+        mock_positions_data: dict[str, Any],
+    ) -> None:
+        mock_schwab_client.get_account.return_value = _resp(200, mock_positions_data)
+        out = server_module.get_concentration_analysis(account_hash="ACCT_HASH_AAAAAAAAAAAA")
+        assert out["ok"] is True
+        assert out["concentration"]["position_count"] == 2
+
+    def test_get_cross_account_summary_via_server(
+        self,
+        installed_client: Any,
+        mock_schwab_client: MagicMock,
+        mock_positions_data: dict[str, Any],
+    ) -> None:
+        mock_schwab_client.get_account_numbers.return_value = _resp(
+            200, [{"accountNumber": "A1", "hashValue": "ACCT_HASH_AAAAAAAAAAAA"}]
+        )
+        mock_schwab_client.get_account.return_value = _resp(200, mock_positions_data)
+        out = server_module.get_cross_account_summary()
+        assert out["ok"] is True
+        assert out["account_count"] == 1
 
 
 class TestMainFunctionGuarded:

@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-06-15
+
+### Added
+
+- **Three read-only derived analytics tools** (`src/schwab_positions_mcp/tools/analytics.py`),
+  growing the tool surface from 8 → 11. All three are pure transforms over the
+  existing read-only feeds — **no** new mutation paths, **no** new cache
+  writes, and they call only the Layer-1 white-listed read methods
+  (`get_account`, `get_account_numbers`, `get_transactions`):
+  - **`get_pnl_analysis(account_hash, realized_lookback_days=60)`** — per-position
+    cost basis / unrealized P&L / unrealized %, a transaction-derived realized
+    P&L over the lookback window, and a portfolio roll-up.
+    **Cost-basis method: AVERAGE COST** — Schwab's positions feed exposes only
+    the blended `averagePrice` per holding, with no per-lot acquisition records,
+    so a true FIFO lot walk is impossible from this feed. Realized P&L is a
+    conservative proceeds-based proxy (sum of net cash from closing SELL trades),
+    clearly labelled and degrading to `realized_pl_available: false` if the
+    transactions endpoint errors so the unrealized block still returns.
+  - **`get_concentration_analysis(account_hash, top_n=5)`** — top-N weights,
+    Herfindahl-Hirschman Index (HHI) with a normalised interpretation band
+    (`diversified` / `moderately_concentrated` / `highly_concentrated`), max
+    single-position weight, and asset-type exposure. Sector exposure is `"N/A"`
+    (no GICS field in the Schwab positions feed); `assetType` is surfaced as a
+    best-effort proxy.
+  - **`get_cross_account_summary()`** — discovers every linked account via
+    `get_account_numbers`, then fans out `get_account` per account and merges
+    positions + balances into a combined view with per-account
+    share-of-liquidation-value and symbol-level de-duplication across accounts.
+    Handles single / multi / zero-account cases; a per-account fetch error is
+    recorded on that account without failing the whole aggregation.
+- `tests/test_analytics.py` — 48 new tests covering normal / boundary / error
+  paths for all three tools, cost-basis correctness, HHI band edges, the
+  single / multi / empty cross-account matrix, and a read-only boundary test
+  asserting the analytics layer only ever calls white-listed read methods and
+  carries no mutation keywords.
+
+### Changed
+
+- `get_server_info` now reports 11 tools; README / README_zh tool tables and the
+  v0.1.1 regression tests updated to the 11-tool surface.
+
 ## [0.2.0] - 2026-06-15
 
 ### Added

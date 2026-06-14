@@ -22,7 +22,7 @@ which exposes Schwab Market Data Production endpoints. The two repos are
 deliberately split so the trading-account credential set lives in its own
 process and config directory.
 
-## Tools (8)
+## Tools (11)
 
 ### Account / portfolio (6)
 
@@ -34,6 +34,14 @@ process and config directory.
 | `get_orders_history`     | Return orders between two timezone-aware datetimes (Schwab caps lookback at 60 days).                |
 | `get_transactions`       | Return transactions between two ISO dates (TRADE / DIVIDEND_OR_INTEREST / etc).                      |
 | `get_account_summary`    | Compact aggregate: position count, total market value, total P&L, cash, buying power, balances.     |
+
+### Derived analytics (3, read-only — pure computation, no cache write)
+
+| Tool                          | Description                                                                                          |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `get_pnl_analysis`            | Per-position cost basis / unrealized P&L / unrealized %, transaction-derived realized P&L, and a portfolio roll-up. **Cost-basis method: AVERAGE COST** (the positions feed exposes only `averagePrice`; no per-lot records for FIFO). |
+| `get_concentration_analysis`  | Top-N weights, Herfindahl-Hirschman Index (HHI), max single-position weight, and asset-type exposure. Sector exposure is `N/A` — the Schwab positions feed has no GICS sector field. |
+| `get_cross_account_summary`   | Fan out over `get_account_numbers` → `get_account` per account, then merge positions + balances into a combined view with per-account share-of-total and symbol-level de-duplication. |
 
 ### Meta (2)
 
