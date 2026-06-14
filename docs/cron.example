@@ -1,0 +1,177 @@
+# cron.example — schwab-positions-mcp token-health probe scheduling
+
+Schwab refresh tokens expire after a **hard, non-extendable 7 days**. There
+is no fully-automatic keep-alive (using the refresh token does NOT reset the
+7-day clock — the window runs from the token's original creation). The next
+best thing is a scheduled health probe that warns you *before* the token dies
+so re-authorizing is predictable instead of surprising.
+
+This file shows how to schedule `python -m schwab_positions_mcp.health` on
+each OS. Customize the path substitutions (`uv` path, repo path) for your
+machine. The probe:
+
+- exits `0` healthy / `1` <24h / `2` <12h-or-expired / `3` missing /
+  `4` malformed / `5` insecure perms,
+- fires a desktop notification + writes
+  `~/Desktop/SCHWAB_POSITIONS_REAUTH_NEEDED.md` on any non-zero exit,
+- never opens a browser and never touches Schwab state (offline-safe).
+
+The schedule below biases toward typical "at the keyboard" windows (weekend
+evening + mid-week evening) plus a 4-hour fallback for laptops that were
+asleep during a scheduled run.
+
+---
+
+## macOS (launchd)
+
+Save as
+`~/Library/LaunchAgents/com.kevinkda.schwab-positions-mcp.health.plist`,
+then load with:
+
+```bash
+launchctl load -w ~/Library/LaunchAgents/com.kevinkda.schwab-positions-mcp.health.plist
+```
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.kevinkda.schwab-positions-mcp.health</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/YOURUSER/.local/bin/uv</string>
+        <string>--directory</string>
+        <string>/Users/YOURUSER/code/kevinkda/schwab-positions-mcp</string>
+        <string>run</string>
+        <string>python</string>
+        <string>-m</string>
+        <string>schwab_positions_mcp.health</string>
+    </array>
+
+    <!-- Primary cadence: Sunday 20:00 + Wednesday 21:00 (24h clock). -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict>
+            <key>Weekday</key><integer>0</integer>  <!-- Sunday -->
+            <key>Hour</key><integer>20</integer>
+            <key>Minute</key><integer>0</integer>
+        </dict>
+        <dict>
+            <key>Weekday</key><integer>3</integer>  <!-- Wednesday -->
+            <key>Hour</key><integer>21</integer>
+            <key>Minute</key><integer>0</integer>
+        </dict>
+    </array>
+
+    <!-- Lid-close fallback: launchd misses StartCalendarInterval while the
+         laptop is sleeping and DOES NOT auto-catch-up. StartInterval=14400
+         (4h) ensures we re-probe shortly after wake. -->
+    <key>StartInterval</key>
+    <integer>14400</integer>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/YOURUSER/.local/state/schwab-positions-mcp/health.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/YOURUSER/.local/state/schwab-positions-mcp/health.err.log</string>
+</dict>
+</plist>
+```
+
+> Replace `YOURUSER` with the output of `whoami`. If you use mise / pyenv,
+> point `ProgramArguments[0]` at the absolute path returned by `which uv`.
+
+---
+
+## Linux (crontab)
+
+Append to `crontab -e`:
+
+```cron
+# schwab-positions-mcp token health probe — primary slots (24h clock).
+MAILTO=""   # leave empty unless you have sendmail / msmtp configured.
+0 20 * * 0 cd "$HOME/code/kevinkda/schwab-positions-mcp" && "$HOME/.local/bin/uv" run python -m schwab_positions_mcp.health >> "$HOME/.local/state/schwab-positions-mcp/health.out.log" 2>> "$HOME/.local/state/schwab-positions-mcp/health.err.log"
+0 21 * * 3 cd "$HOME/code/kevinkda/schwab-positions-mcp" && "$HOME/.local/bin/uv" run python -m schwab_positions_mcp.health >> "$HOME/.local/state/schwab-positions-mcp/health.out.log" 2>> "$HOME/.local/state/schwab-positions-mcp/health.err.log"
+
+# 4h fall-back so we still notice <12h-to-expiry on a workday.
+0 */4 * * * cd "$HOME/code/kevinkda/schwab-positions-mcp" && "$HOME/.local/bin/uv" run python -m schwab_positions_mcp.health >> "$HOME/.local/state/schwab-positions-mcp/health.out.log" 2>> "$HOME/.local/state/schwab-positions-mcp/health.err.log"
+```
+
+If you have `sendmail` / `msmtp` installed, set `MAILTO=you@example.com` —
+cron will email the script's stderr whenever the probe exits with code 2
+(critical).
+
+---
+
+## Windows native (Task Scheduler) — experimental
+
+Save the following as `register-schwab-positions-health.ps1` and run **once**
+in an elevated PowerShell:
+
+```powershell
+$Repo   = "$env:USERPROFILE\code\kevinkda\schwab-positions-mcp"
+$UvBin  = "$env:USERPROFILE\.local\bin\uv.exe"
+$LogDir = "$env:LOCALAPPDATA\schwab-positions-mcp"
+New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
+
+$Action = New-ScheduledTaskAction `
+    -Execute $UvBin `
+    -Argument "--directory `"$Repo`" run python -m schwab_positions_mcp.health" `
+    -WorkingDirectory $Repo
+
+# Sunday 20:00 + Wednesday 21:00 + every 4 hours fallback.
+$Triggers = @(
+    (New-ScheduledTaskTrigger -Weekly -DaysOfWeek Sunday    -At 8:00PM),
+    (New-ScheduledTaskTrigger -Weekly -DaysOfWeek Wednesday -At 9:00PM),
+    (New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Hours 4))
+)
+
+$Principal = New-ScheduledTaskPrincipal -UserId "$env:USERNAME" -LogonType Interactive
+$Settings  = New-ScheduledTaskSettingsSet `
+    -StartWhenAvailable `
+    -DontStopOnIdleEnd `
+    -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
+
+Register-ScheduledTask `
+    -TaskName "SchwabPositionsMcpHealth" `
+    -Action $Action `
+    -Trigger $Triggers `
+    -Principal $Principal `
+    -Settings $Settings `
+    -Description "schwab-positions-mcp token-health probe (read-only)."
+```
+
+To remove later:
+
+```powershell
+Unregister-ScheduledTask -TaskName "SchwabPositionsMcpHealth" -Confirm:$false
+```
+
+---
+
+## Verifying the schedule
+
+```bash
+# Run the probe now (exit code reflects token state).
+uv run python -m schwab_positions_mcp.health
+echo "exit code: $?"
+
+# Inspect the structured JSON log line.
+tail -1 "$HOME/.local/state/schwab-positions-mcp/health.err.log"
+```
+
+When the token is within 24h of expiry (or already expired), you will get a
+desktop notification and a `~/Desktop/SCHWAB_POSITIONS_REAUTH_NEEDED.md` file
+containing the one-command fix:
+
+```bash
+uv run python -m schwab_positions_mcp.auth login_flow
+```
+
+Your App Key / Secret stay in `.env`, so re-authorizing is just the browser
+login — you never re-register the app.

@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-06-15
+
+### Added
+
+- **Token-health probe CLI** `python -m schwab_positions_mcp.health`
+  (`src/schwab_positions_mcp/health.py`). Schwab refresh tokens expire after
+  a hard, non-extendable **7 days** (confirmed against schwab-py docs + the
+  Schwab Developer Portal: using the refresh token does **not** reset the
+  7-day clock, so there is no fully-automatic keep-alive). The probe makes
+  that expiry *predictable*: scheduled via cron / launchd / Task Scheduler it
+  reads the local token file, computes days-to-expiry (schwab-py
+  `token_age()` when creds are present, else file mtime — **offline-safe**,
+  never opens a browser or calls Schwab), and on any non-zero exit fires a
+  best-effort desktop notification (macOS `osascript` / Linux `notify-send` /
+  Windows toast) **and** writes `~/Desktop/SCHWAB_POSITIONS_REAUTH_NEEDED.md`
+  with the exact one-command re-auth instructions. Exit codes: `0` healthy /
+  `1` <24h / `2` <12h-or-expired / `3` missing / `4` malformed / `5` insecure
+  perms. This wires up the previously-dormant `_platform.notify_desktop`
+  helper.
+- `health_check` MCP tool now also reports `token_age_days` and
+  `token_expires_in_days` under `checks` (mtime-based, offline-safe estimate),
+  so an agent can surface the 7-day countdown in-protocol. Existing fields are
+  unchanged.
+- `docs/cron.example` — ready-to-paste launchd / crontab / Task Scheduler
+  snippets for the probe (Sunday 20:00 + Wednesday 21:00 + a 4-hour
+  laptop-wake fallback).
+- `docs/REGISTER.md §4` rewritten to explain the 7-day hard limit, why there
+  is no auto-renew, the new health probe, and the one-command re-auth flow.
+- `tests/test_health.py` — 38 new tests covering the full exit-code matrix,
+  both token-age probe paths (schwab-py primary mocked + mtime fallback),
+  redaction, marker-file write, and CLI entry. Plus 4 new `test_meta.py` cases
+  for the `token_age_days` / `token_expires_in_days` fields. Coverage held at
+  **100.00%** line + branch (`health.py` 171 stmts / 48 branches, 0 miss).
+
+### Security
+
+- The probe never logs tokens: `~/Desktop/SCHWAB_POSITIONS_REAUTH_NEEDED.md`
+  redacts any `Bearer` / `access_token` / `refresh_token` material before
+  writing. Token file permissions (0o600) are still asserted (exit code 5 on
+  drift). No new dependency added; the probe is read-only and offline-safe.
+
+### Compatibility
+
+- **No breaking changes.** Additive only: a new CLI module, two new
+  `health_check` `checks` fields, and docs. The 8-tool MCP surface, the
+  5-layer read-only boundary, and every response shape are unchanged.
+
 ## [0.1.4] - 2026-06-09
 
 ### Changed
@@ -253,7 +300,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - See [`docs/SECURITY.md`](docs/SECURITY.md) for the threat model and
   5-layer boundary rationale.
 
-[Unreleased]: https://github.com/kevinkda/schwab-positions-mcp/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/kevinkda/schwab-positions-mcp/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/kevinkda/schwab-positions-mcp/releases/tag/v0.2.0
+[0.1.4]: https://github.com/kevinkda/schwab-positions-mcp/releases/tag/v0.1.4
 [0.1.3]: https://github.com/kevinkda/schwab-positions-mcp/releases/tag/v0.1.3
 [0.1.2]: https://github.com/kevinkda/schwab-positions-mcp/releases/tag/v0.1.2
 [0.1.1]: https://github.com/kevinkda/schwab-positions-mcp/releases/tag/v0.1.1

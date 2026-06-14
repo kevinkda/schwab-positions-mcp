@@ -41,6 +41,44 @@ class TestHealthCheck:
         assert out["status"] == "ready"
         assert out["checks"]["token_present"] is True
 
+    def test_reports_token_age_and_expiry_when_present(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        import os
+        from datetime import UTC, datetime, timedelta
+
+        token = tmp_path / "tok.json"
+        token.write_text(json.dumps({"access_token": "x"}))
+        monkeypatch.setenv("SCHWAB_POSITIONS_TOKEN_PATH", str(token))
+        # Backdate mtime by 2 days → age≈2, expires_in≈5.
+        old = (datetime.now(UTC) - timedelta(days=2)).timestamp()
+        os.utime(token, (old, old))
+        out = meta.health_check_impl()
+        assert out["checks"]["token_age_days"] == pytest.approx(2.0, abs=0.05)
+        assert out["checks"]["token_expires_in_days"] == pytest.approx(5.0, abs=0.05)
+
+    def test_token_age_none_when_absent(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        monkeypatch.setenv("SCHWAB_POSITIONS_TOKEN_PATH", str(tmp_path / "missing.json"))
+        out = meta.health_check_impl()
+        assert out["checks"]["token_age_days"] is None
+        assert out["checks"]["token_expires_in_days"] is None
+
+    def test_token_age_none_on_stat_error(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        token = tmp_path / "tok.json"
+        token.write_text("{}")
+        monkeypatch.setenv("SCHWAB_POSITIONS_TOKEN_PATH", str(token))
+
+        # exists() returns True (token_present) but the subsequent stat() in the
+        # age block raises — exercises the OSError guard inside the age branch.
+        monkeypatch.setattr(Path, "exists", lambda _self: True)
+
+        def _boom_stat(_self: Path, *a: object, **k: object) -> object:
+            raise OSError("stat failed")
+
+        monkeypatch.setattr(Path, "stat", _boom_stat)
+        out = meta.health_check_impl()
+        assert out["checks"]["token_present"] is True
+        assert out["checks"]["token_age_days"] is None
+        assert out["checks"]["token_expires_in_days"] is None
+
     def test_checked_at_is_iso_utc(self) -> None:
         out = meta.health_check_impl()
         assert out["checked_at"].endswith("+00:00")

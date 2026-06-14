@@ -68,9 +68,59 @@ The token persists at `~/.config/schwab-positions-mcp/token.json`
 ## 4. Token lifetime
 
 - **Access token** expires every ~30 minutes; schwab-py auto-refreshes.
-- **Refresh token** expires every **7 days**. When it does, every API
-  call returns 401 with `refresh_token_expired`. Re-run `login_flow`
-  (or `manual_flow`) to mint a fresh refresh token.
+- **Refresh token** expires every **7 days** — a hard, non-extendable limit
+  enforced by Schwab's servers. Using the refresh token to mint an access
+  token does **not** reset the 7-day clock (the window runs from the token's
+  original creation, not its last use), so there is **no fully-automatic
+  keep-alive**. When it expires, every API call returns 401 with
+  `refresh_token_expired`; re-run `login_flow` (or `manual_flow`) to mint a
+  fresh refresh token.
+
+> **Why no auto-renew?** Confirmed against the
+> [schwab-py docs](https://schwab-py.readthedocs.io/en/latest/auth.html)
+> ("There is currently no way to make a refresh token last longer than seven
+> days") and the Schwab Developer Portal. This is a deliberate Schwab security
+> measure, identical across every Schwab API client library.
+
+### 4.1 Make the 7-day expiry predictable (recommended)
+
+Because expiry can't be avoided, schedule the bundled health probe so you get
+warned *before* the token dies instead of discovering it mid-session:
+
+```bash
+# Run it now to see the current state (exit code 0 healthy … 5 insecure perms).
+uv run python -m schwab_positions_mcp.health
+echo "exit: $?"
+```
+
+The probe is **offline-safe** (no browser, no Schwab call): it reads the local
+token file, computes days-to-expiry (via schwab-py's `token_age()` when creds
+are present, else the file mtime), and on any non-zero exit it:
+
+- fires a best-effort desktop notification (macOS `osascript` / Linux
+  `notify-send` / Windows toast), and
+- writes `~/Desktop/SCHWAB_POSITIONS_REAUTH_NEEDED.md` with the exact one-line
+  re-auth command.
+
+Schedule it with cron / launchd / Task Scheduler — see
+[`docs/cron.example`](cron.example) for ready-to-paste snippets (Sunday 20:00
++ Wednesday 21:00 + a 4-hour fallback).
+
+The MCP `health_check` tool also now reports `token_age_days` and
+`token_expires_in_days` under `checks`, so an agent can surface the countdown
+in-protocol.
+
+### 4.2 Re-authorizing when it does expire
+
+One command — your App Key / Secret are already saved in `.env`, so you only
+redo the browser login, not the registration:
+
+```bash
+uv run python -m schwab_positions_mcp.auth login_flow
+# or, if the browser flow is flaky:
+uv run python -m schwab_positions_mcp.auth manual_flow
+```
+
 
 ## 5. Troubleshooting
 

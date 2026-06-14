@@ -10,12 +10,18 @@ from pathlib import Path
 from typing import Any
 
 from .. import __version__
+from ..health import REFRESH_TOKEN_LIFETIME_DAYS
 
 
 def health_check_impl(_payload: dict[str, Any] | None = None) -> dict[str, Any]:
     """Lightweight readiness check.
 
-    Reports presence of credentials + token without contacting Schwab.
+    Reports presence of credentials + token without contacting Schwab. When a
+    token file exists, also reports its approximate age and days-to-expiry so
+    callers (and the user) can see the 7-day refresh-token clock ticking down.
+    The age is derived from the token file's mtime — an offline-safe estimate
+    that needs no credentials; the dedicated ``schwab_positions_mcp.health``
+    CLI probe uses schwab-py's exact ``creation_timestamp`` when creds exist.
     """
     api_key_present = bool(os.environ.get("SCHWAB_API_KEY", "").strip())
     app_secret_present = bool(os.environ.get("SCHWAB_APP_SECRET", "").strip())
@@ -24,6 +30,18 @@ def health_check_impl(_payload: dict[str, Any] | None = None) -> dict[str, Any]:
         or (Path.home() / ".config" / "schwab-positions-mcp" / "token.json")
     )
     token_present = token_path.exists()
+
+    token_age_days: float | None = None
+    token_expires_in_days: float | None = None
+    if token_present:
+        try:
+            mtime = token_path.stat().st_mtime
+            age_seconds = datetime.now(UTC).timestamp() - mtime
+            token_age_days = round(max(0.0, age_seconds) / 86400, 3)
+            token_expires_in_days = round(REFRESH_TOKEN_LIFETIME_DAYS - token_age_days, 3)
+        except OSError:
+            token_age_days = None
+            token_expires_in_days = None
 
     if api_key_present and app_secret_present and token_present:
         status = "ready"
@@ -40,6 +58,8 @@ def health_check_impl(_payload: dict[str, Any] | None = None) -> dict[str, Any]:
             "app_secret_present": app_secret_present,
             "token_present": token_present,
             "token_path": str(token_path),
+            "token_age_days": token_age_days,
+            "token_expires_in_days": token_expires_in_days,
         },
         "checked_at": datetime.now(UTC).isoformat(),
     }
