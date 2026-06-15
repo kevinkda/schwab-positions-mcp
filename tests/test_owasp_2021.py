@@ -15,6 +15,7 @@ Every test asserts a concrete invariant — no empty-coverage padding.
 
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -23,8 +24,28 @@ from unittest.mock import MagicMock
 import pytest
 
 from schwab_positions_mcp.cache import Cache
+from schwab_positions_mcp.cache_backend import ClickHouseBackend, MemoryBackend
 from schwab_positions_mcp.client import _READ_ONLY_METHODS, ReadOnlySchwabClient
 from schwab_positions_mcp.tools import _common as tools_common
+
+
+def _ch_cache() -> tuple[Cache, MagicMock]:
+    client = MagicMock()
+    client.command.return_value = None
+    client.insert.return_value = None
+    result = MagicMock()
+    result.result_rows = []
+    client.query.return_value = result
+    return Cache(backend=ClickHouseBackend(url="clickhouse://x", client=client)), client
+
+
+def _inserted_rows(client: MagicMock) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for call in client.insert.call_args_list:
+        for entry in call.args[1]:
+            rows.append(json.loads(entry[1]))
+    return rows
+
 
 if TYPE_CHECKING:
     pass
@@ -104,23 +125,12 @@ class TestA02CryptographicFailures:
         assert ".config" in str(path)
         assert path.name == "token.json"
 
-    def test_cache_db_not_world_readable_on_posix(self, tmp_path: Path) -> None:
-        """Secret-adjacent DuckDB file must be 0o600 (owner-only) on POSIX."""
-        import os
-        import stat
-        import sys
-
-        if sys.platform == "win32":
-            pytest.skip("POSIX-only perm semantics")
-        cache = Cache(db_path=tmp_path / "cache.duckdb")
-        try:
-            mode = stat.S_IMODE(os.stat(tmp_path / "cache.duckdb").st_mode)
-            assert mode == 0o600
-            # No group/other read bits.
-            assert not (mode & stat.S_IRGRP)
-            assert not (mode & stat.S_IROTH)
-        finally:
-            cache.close()
+    def test_cache_default_backend_writes_no_file(self) -> None:
+        """v0.3.0: the default memory backend keeps no on-disk state — no
+        secret-adjacent cache file to mis-permission."""
+        cache = Cache(backend=MemoryBackend())
+        assert cache.backend.name == "memory"
+        assert cache.write_orders_history("H_ABCDEF", [{"orderId": "1"}]) == 0
 
     def test_secret_never_appears_in_correlation_log(self, caplog: pytest.LogCaptureFixture) -> None:
         """Correlation ids in logs are redacted — no plaintext secret-like material logged."""
@@ -141,22 +151,16 @@ class TestA02CryptographicFailures:
 
 
 class TestA03Injection:
-    def test_parameterised_query_blocks_sql_injection(self, tmp_path: Path) -> None:
-        """DuckDB writes use bound parameters — a SQL payload cannot alter the schema."""
-        cache = Cache(db_path=tmp_path / "cache.duckdb")
-        try:
-            payload = "x'); DROP TABLE orders_history;--"
-            cache.write_orders_history(
-                "HASH_ABCDEF",
-                [{"orderId": payload, "orderLegCollection": [{"instrument": {"symbol": payload}}]}],
-            )
-            # Table survived; payload stored as inert data.
-            row = cache._conn.execute(  # type: ignore[union-attr]
-                "SELECT order_id FROM orders_history WHERE account_hash = ?", ["HASH_ABCDEF"]
-            ).fetchone()
-            assert row is not None and row[0] == payload
-        finally:
-            cache.close()
+    def test_payload_stored_as_inert_data(self) -> None:
+        """v0.3.0: no SQL surface — a SQL payload round-trips as inert data."""
+        cache, client = _ch_cache()
+        payload = "x'); DROP TABLE orders_history;--"
+        cache.write_orders_history(
+            "HASH_ABCDEF",
+            [{"orderId": payload, "orderLegCollection": [{"instrument": {"symbol": payload}}]}],
+        )
+        rows = _inserted_rows(client)
+        assert rows and rows[0]["order_id"] == payload
 
     def test_status_filter_constrained_by_literal_enum(self) -> None:
         """Order status is a Literal enum — arbitrary injected statuses are rejected."""
@@ -307,21 +311,16 @@ class TestA08DataIntegrity:
         assert result["transactions"] == []
         assert result["count"] == 0
 
-    def test_cache_roundtrip_preserves_values(self, tmp_path: Path, mock_positions_data: dict[str, Any]) -> None:
-        """Data written to cache must read back identically (integrity of persisted snapshots)."""
-        cache = Cache(db_path=tmp_path / "cache.duckdb")
-        try:
-            positions = mock_positions_data["securitiesAccount"]["positions"]
-            cache.write_positions_snapshot("HASH_ABCDEF", positions)
-            rows = cache._conn.execute(  # type: ignore[union-attr]
-                "SELECT symbol, market_value FROM positions_snapshots ORDER BY symbol"
-            ).fetchall()
-            symbols = {r[0] for r in rows}
-            assert symbols == {"AAPL", "MSFT"}
-            mv = {r[0]: r[1] for r in rows}
-            assert mv["AAPL"] == pytest.approx(1700.0)
-        finally:
-            cache.close()
+    def test_cache_roundtrip_preserves_values(self, mock_positions_data: dict[str, Any]) -> None:
+        """Data written to the backend must serialise identically (integrity of persisted snapshots)."""
+        cache, client = _ch_cache()
+        positions = mock_positions_data["securitiesAccount"]["positions"]
+        cache.write_positions_snapshot("HASH_ABCDEF", positions)
+        rows = _inserted_rows(client)
+        symbols = {r["symbol"] for r in rows}
+        assert symbols == {"AAPL", "MSFT"}
+        mv = {r["symbol"]: r["market_value"] for r in rows}
+        assert mv["AAPL"] == pytest.approx(1700.0)
 
 
 # ===========================================================================
@@ -330,17 +329,11 @@ class TestA08DataIntegrity:
 
 
 class TestA09LoggingMonitoring:
-    def test_insert_logged_as_audit_event(self, tmp_path: Path, mock_orders_data: list[dict[str, Any]]) -> None:
-        """Successful writes are auditable via the cache_events INSERT log."""
-        cache = Cache(db_path=tmp_path / "cache.duckdb")
-        try:
-            cache.write_orders_history("HASH_ABCDEF", mock_orders_data)
-            rows = cache._conn.execute(  # type: ignore[union-attr]
-                "SELECT kind, row_count FROM cache_events WHERE kind='INSERT'"
-            ).fetchall()
-            assert rows and rows[0][1] == len(mock_orders_data)
-        finally:
-            cache.close()
+    def test_write_count_is_auditable(self, mock_orders_data: list[dict[str, Any]]) -> None:
+        """Successful writes are auditable via the returned persisted-row count."""
+        cache, _ = _ch_cache()
+        persisted = cache.write_orders_history("HASH_ABCDEF", mock_orders_data)
+        assert persisted == len(mock_orders_data)
 
     def test_rate_limit_429_surfaces_for_monitoring(self) -> None:
         class _R:

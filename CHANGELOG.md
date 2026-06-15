@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-06-15
+
+### Changed
+
+- ⚠️ **BREAKING: the embedded DuckDB cache is removed and replaced by a
+  pluggable cache backend (v0.7 T0).** Storage is selected via
+  `SCHWAB_POSITIONS_CACHE_BACKEND`:
+  - **memory** (default) — in-process, zero external dependency,
+    concurrency-safe, non-blocking. Removes the old single-connection
+    DuckDB + global `RLock`, the on-disk `cache.duckdb` file, file locks,
+    the corrupt-DB quarantine machinery, and the `cache_events` audit
+    table. Keeps **no durable history**, so snapshot writes report
+    `snapshot_written:0` (graceful degradation).
+  - **clickhouse** (opt-in) — `pip install schwab-positions-mcp[clickhouse]`
+    with `SCHWAB_POSITIONS_CLICKHOUSE_URL` and
+    `SCHWAB_POSITIONS_CACHE_BACKEND=clickhouse` to durably persist the
+    historical position / order / transaction snapshots.
+- **Removed the `duckdb` runtime dependency.** ClickHouse is an opt-in
+  `[clickhouse]` extra only; the default install ships with **zero new
+  dependencies** and works out of the box.
+- The snapshot-write public API (`write_positions_snapshot` /
+  `write_orders_history` / `write_transactions_history`) is unchanged — all
+  tools and the 5-layer read-only boundary are unaffected, and
+  `analytics.py` is untouched. The cache layer only ever *writes* derived
+  history; it never feeds reads back into a tool, so it cannot widen the
+  read-only attack surface.
+- 100% line+branch coverage preserved (memory degradation, ClickHouse via a
+  mocked client, factory fallback, and backend error paths). Old
+  DuckDB-internals tests adapted to the backend model.
+
 ## [0.2.1] - 2026-06-15
 
 ### Added

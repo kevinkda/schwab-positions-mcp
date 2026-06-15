@@ -16,6 +16,7 @@ Every test asserts a concrete invariant — no empty-coverage padding.
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import TYPE_CHECKING, Any
 from unittest.mock import MagicMock
@@ -23,6 +24,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from schwab_positions_mcp.cache import Cache
+from schwab_positions_mcp.cache_backend import ClickHouseBackend, MemoryBackend
 from schwab_positions_mcp.client import _READ_ONLY_METHODS
 from schwab_positions_mcp.models import GetAccountPositionsInput
 from schwab_positions_mcp.tools import _common as tools_common
@@ -31,6 +33,24 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from schwab_positions_mcp.client import ReadOnlySchwabClient
+
+
+def _ch_cache() -> tuple[Cache, MagicMock]:
+    client = MagicMock()
+    client.command.return_value = None
+    client.insert.return_value = None
+    result = MagicMock()
+    result.result_rows = []
+    client.query.return_value = result
+    return Cache(backend=ClickHouseBackend(url="clickhouse://x", client=client)), client
+
+
+def _inserted_rows(client: MagicMock) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for call in client.insert.call_args_list:
+        for entry in call.args[1]:
+            rows.append(json.loads(entry[1]))
+    return rows
 
 
 # Strings an attacker might inject to attempt SQL / command / path-traversal /
@@ -81,36 +101,27 @@ class TestA1Injection:
                 f"validated account_hash {survivor!r} still carries injection metacharacters"
             )
 
-    def test_duckdb_writes_are_parameterised_not_string_interpolated(
-        self, tmp_path: Path, mock_positions_data: dict[str, Any]
-    ) -> None:
+    def test_cache_writes_store_payload_as_inert_data(self, mock_positions_data: dict[str, Any]) -> None:
         """A symbol containing SQL metacharacters must be stored as data, never executed.
 
-        We feed a position whose symbol is a SQL-injection string and assert
-        the row lands verbatim (parameter binding) and the table still exists
-        with the expected row count — i.e. no DROP/DELETE took effect.
+        v0.3.0: there is no SQL surface — values are bound as ClickHouse query
+        parameters / JSON payloads.  We assert the injection string round-trips
+        verbatim as inert data.
         """
-        cache = Cache(db_path=tmp_path / "cache.duckdb")
-        try:
-            evil_symbol = "'; DROP TABLE positions_snapshots;--"
-            positions = [
-                {
-                    "instrument": {"symbol": evil_symbol, "assetType": "EQUITY"},
-                    "longQuantity": 1.0,
-                    "marketValue": 10.0,
-                }
-            ]
-            n = cache.write_positions_snapshot("HASH_ABCDEF", positions)
-            assert n == 1
-            # Table still exists (DROP did not execute) and stored the literal.
-            row = cache._conn.execute(  # type: ignore[union-attr]
-                "SELECT symbol FROM positions_snapshots WHERE account_hash = ?",
-                ["HASH_ABCDEF"],
-            ).fetchone()
-            assert row is not None
-            assert row[0] == evil_symbol, "symbol must be stored as inert data, not executed"
-        finally:
-            cache.close()
+        del mock_positions_data
+        cache, client = _ch_cache()
+        evil_symbol = "'; DROP TABLE positions_snapshots;--"
+        positions = [
+            {
+                "instrument": {"symbol": evil_symbol, "assetType": "EQUITY"},
+                "longQuantity": 1.0,
+                "marketValue": 10.0,
+            }
+        ]
+        n = cache.write_positions_snapshot("HASH_ABCDEF", positions)
+        assert n == 1
+        rows = _inserted_rows(client)
+        assert rows[0]["symbol"] == evil_symbol, "symbol must be stored as inert data, not executed"
 
     def test_account_hash_not_concatenated_into_url(
         self,
@@ -265,37 +276,13 @@ class TestA5BrokenAccessControl:
 
 
 class TestA6SecurityMisconfiguration:
-    def test_cache_dir_chmod_700_on_posix(self, tmp_path: Path) -> None:
-        """The cache directory must be created with restrictive 0o700 perms on POSIX."""
-        import os
-        import stat
-        import sys
-
-        if sys.platform == "win32":
-            pytest.skip("POSIX-only perm semantics")
-        db = tmp_path / "sub" / "cache.duckdb"
-        cache = Cache(db_path=db)
-        try:
-            mode = stat.S_IMODE(os.stat(db.parent).st_mode)
-            assert mode == 0o700, f"cache dir must be 0o700, got {oct(mode)}"
-        finally:
-            cache.close()
-
-    def test_cache_db_file_chmod_600_on_posix(self, tmp_path: Path) -> None:
-        """The DuckDB file itself must be 0o600 on POSIX (secret-adjacent state)."""
-        import os
-        import stat
-        import sys
-
-        if sys.platform == "win32":
-            pytest.skip("POSIX-only perm semantics")
-        db = tmp_path / "cache.duckdb"
-        cache = Cache(db_path=db)
-        try:
-            mode = stat.S_IMODE(os.stat(db).st_mode)
-            assert mode == 0o600, f"cache DB must be 0o600, got {oct(mode)}"
-        finally:
-            cache.close()
+    def test_default_backend_writes_no_file(self) -> None:
+        """v0.3.0: the default memory backend keeps no on-disk state — there is
+        no cache file/dir to mis-permission (the old DuckDB file is gone)."""
+        cache = Cache(backend=MemoryBackend())
+        assert cache.backend.name == "memory"
+        # A write degrades to 0 persisted rows on memory; no file is created.
+        assert cache.write_orders_history("H_ABCDEF", [{"orderId": "1"}]) == 0
 
     def test_server_info_declares_read_only_and_no_trade(self) -> None:
         """get_server_info must advertise the safe defaults (read-only, no trade endpoints)."""
@@ -379,32 +366,16 @@ class TestA9KnownVulnerableComponents:
 
 
 class TestA10InsufficientLogging:
-    def test_cache_write_failure_records_error_event(self, tmp_path: Path) -> None:
-        """A failed write must emit an ERROR row into cache_events for auditability."""
-        import duckdb
-
-        cache = Cache(db_path=tmp_path / "cache.duckdb")
-        try:
-            real_conn = cache._conn
-            broken = MagicMock(wraps=real_conn)
-            broken.executemany.side_effect = duckdb.Error("simulated")
-            # Keep the real execute for the _log_event INSERT (audit trail).
-            broken.execute.side_effect = real_conn.execute  # type: ignore[union-attr]
-            cache._conn = broken
-
-            cache.write_orders_history(
-                "HASH_ABCDEF",
-                [{"orderId": 1, "orderLegCollection": [{"instrument": {"symbol": "AAPL"}}]}],
-            )
-
-            # Query the audit log via the real connection.
-            cache._conn = real_conn
-            rows = real_conn.execute(  # type: ignore[union-attr]
-                "SELECT kind FROM cache_events WHERE kind = 'ERROR'"
-            ).fetchall()
-            assert len(rows) >= 1, "a write failure must be logged as an ERROR cache event"
-        finally:
-            cache.close()
+    def test_cache_write_failure_degrades_to_zero(self) -> None:
+        """A failed backend write must degrade to 0 persisted rows (best-effort),
+        never raising into the tool — the auditable signal is the returned count."""
+        cache, client = _ch_cache()
+        client.insert.side_effect = RuntimeError("simulated")
+        persisted = cache.write_orders_history(
+            "HASH_ABCDEF",
+            [{"orderId": 1, "orderLegCollection": [{"instrument": {"symbol": "AAPL"}}]}],
+        )
+        assert persisted == 0, "a write failure must surface as 0 persisted rows"
 
     def test_upstream_5xx_is_logged_path_and_raised(self) -> None:
         """A 5xx upstream error must surface a structured 'upstream_error' for monitoring."""

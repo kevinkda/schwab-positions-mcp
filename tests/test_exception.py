@@ -11,21 +11,30 @@ Every test asserts a concrete invariant — no empty-coverage padding.
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING, Any
 from unittest.mock import MagicMock
 
-import duckdb
 import pytest
 
 from schwab_positions_mcp import _platform
-from schwab_positions_mcp.cache import Cache, _parse_dt, _to_float
+from schwab_positions_mcp.cache import Cache, _dt_str, _to_float
+from schwab_positions_mcp.cache_backend import ClickHouseBackend, MemoryBackend
 from schwab_positions_mcp.tools import _common as tools_common
 
 if TYPE_CHECKING:
     from pathlib import Path
 
     from schwab_positions_mcp.client import ReadOnlySchwabClient
+
+
+def _ch_backend() -> ClickHouseBackend:
+    client = MagicMock()
+    client.command.return_value = None
+    client.insert.return_value = None
+    result = MagicMock()
+    result.result_rows = []
+    client.query.return_value = result
+    return ClickHouseBackend(url="clickhouse://x", client=client)
 
 
 # ===========================================================================
@@ -97,65 +106,46 @@ class TestNormaliseResponseExceptionBranches:
 
 
 # ===========================================================================
-# cache write failures — every except duckdb.Error branch
+# cache write failures — backend error / degradation branches
 # ===========================================================================
 
 
 class TestCacheWriteExceptionBranches:
-    def _broken_cache(self, tmp_path: Path) -> Cache:
-        cache = Cache(db_path=tmp_path / "cache.duckdb")
-        real_conn = cache._conn
-        broken = MagicMock(wraps=real_conn)
-        broken.executemany.side_effect = duckdb.Error("simulated write failure")
-        broken.execute.side_effect = real_conn.execute  # type: ignore[union-attr]
-        cache._conn = broken
-        return cache
+    def _broken_cache(self) -> Cache:
+        """A ClickHouse-backed cache whose insert always raises → 0 persisted."""
+        backend = _ch_backend()
+        backend._client.insert.side_effect = RuntimeError("simulated write failure")
+        return Cache(backend=backend)
 
-    def test_positions_write_exception_returns_zero(self, tmp_path: Path, mock_positions_data: dict[str, Any]) -> None:
-        cache = self._broken_cache(tmp_path)
-        try:
-            positions = mock_positions_data["securitiesAccount"]["positions"]
-            assert cache.write_positions_snapshot("H_ABCDEF", positions) == 0
-        finally:
-            cache.close()
+    def test_positions_write_exception_returns_zero(self, mock_positions_data: dict[str, Any]) -> None:
+        cache = self._broken_cache()
+        positions = mock_positions_data["securitiesAccount"]["positions"]
+        assert cache.write_positions_snapshot("H_ABCDEF", positions) == 0
 
-    def test_orders_write_exception_returns_zero(self, tmp_path: Path, mock_orders_data: list[dict[str, Any]]) -> None:
-        cache = self._broken_cache(tmp_path)
-        try:
-            assert cache.write_orders_history("H_ABCDEF", mock_orders_data) == 0
-        finally:
-            cache.close()
+    def test_orders_write_exception_returns_zero(self, mock_orders_data: list[dict[str, Any]]) -> None:
+        cache = self._broken_cache()
+        assert cache.write_orders_history("H_ABCDEF", mock_orders_data) == 0
 
-    def test_transactions_write_exception_returns_zero(
-        self, tmp_path: Path, mock_transactions_data: list[dict[str, Any]]
-    ) -> None:
-        cache = self._broken_cache(tmp_path)
-        try:
-            assert cache.write_transactions_history("H_ABCDEF", mock_transactions_data) == 0
-        finally:
-            cache.close()
+    def test_transactions_write_exception_returns_zero(self, mock_transactions_data: list[dict[str, Any]]) -> None:
+        cache = self._broken_cache()
+        assert cache.write_transactions_history("H_ABCDEF", mock_transactions_data) == 0
 
-    def test_ddl_exception_logged_not_raised(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-        cache = Cache(db_path=tmp_path / "cache.duckdb")
-        try:
-            broken = MagicMock()
-            broken.execute.side_effect = duckdb.Error("DDL boom")
-            cache._conn = broken
-            with caplog.at_level(logging.WARNING):
-                cache._init_schema()
-            assert any("DDL failed" in r.getMessage() for r in caplog.records)
-        finally:
-            cache._conn = None
+    def test_memory_backend_degrades_to_zero(self, mock_orders_data: list[dict[str, Any]]) -> None:
+        """The memory backend keeps no history → writes persist 0 rows."""
+        cache = Cache(backend=MemoryBackend())
+        assert cache.write_orders_history("H_ABCDEF", mock_orders_data) == 0
 
-    def test_close_exception_suppressed(self, tmp_path: Path) -> None:
-        """A duckdb.Error during close() is suppressed (contextlib.suppress)."""
-        cache = Cache(db_path=tmp_path / "cache.duckdb")
-        broken = MagicMock()
-        broken.close.side_effect = duckdb.Error("close boom")
-        cache._conn = broken
-        # Must not raise.
+    def test_append_helper_breaks_on_exception(self, mock_orders_data: list[dict[str, Any]]) -> None:
+        """A raised backend error stops the batch (defensive break path)."""
+        backend = _ch_backend()
+        backend._client.insert.side_effect = RuntimeError("boom")
+        cache = Cache(backend=backend)
+        assert cache.write_orders_history("H_ABCDEF", mock_orders_data) == 0
+
+    def test_close_never_raises(self) -> None:
+        cache = Cache(backend=MemoryBackend())
         cache.close()
-        assert cache._conn is None
+        cache.close()
 
 
 # ===========================================================================
@@ -169,9 +159,9 @@ class TestHelperExceptionSwallow:
         assert _to_float(object()) is None  # TypeError path
         assert _to_float(None) is None
 
-    def test_parse_dt_swallows_bad_input(self) -> None:
-        assert _parse_dt("garbage-date") is None
-        assert _parse_dt(12345) is None  # not str/datetime → str() then fail → None
+    def test_dt_str_swallows_bad_input(self) -> None:
+        assert _dt_str("garbage-date") is None
+        assert _dt_str(12345) is None  # not str/datetime → str() then fail → None
 
     def test_notify_desktop_never_propagates(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(_platform, "IS_MACOS", True)
@@ -216,25 +206,16 @@ class TestExceptionMessagesDoNotLeakSecrets:
 
 
 class TestPostExceptionConsistency:
-    def test_cache_recovers_after_write_failure(self, tmp_path: Path, mock_orders_data: list[dict[str, Any]]) -> None:
-        """A transient write failure must not corrupt the cache — a later write succeeds."""
-        cache = Cache(db_path=tmp_path / "cache.duckdb")
-        try:
-            real_conn = cache._conn
-            broken = MagicMock(wraps=real_conn)
-            broken.executemany.side_effect = duckdb.Error("transient")
-            broken.execute.side_effect = real_conn.execute  # type: ignore[union-attr]
-            cache._conn = broken
-            assert cache.write_orders_history("H_ABCDEF", mock_orders_data) == 0
-            # Restore connection — DB file is intact, schema present, writes work.
-            cache._conn = real_conn
-            assert cache.write_orders_history("H_ABCDEF", mock_orders_data) == len(mock_orders_data)
-            count = real_conn.execute(  # type: ignore[union-attr]
-                "SELECT COUNT(*) FROM orders_history"
-            ).fetchone()
-            assert count is not None and count[0] == len(mock_orders_data)
-        finally:
-            cache.close()
+    def test_cache_recovers_after_write_failure(self, mock_orders_data: list[dict[str, Any]]) -> None:
+        """A transient backend error must not wedge the cache — a later write succeeds."""
+        backend = _ch_backend()
+        # First write: every insert raises → 0 persisted.
+        backend._client.insert.side_effect = RuntimeError("transient")
+        cache = Cache(backend=backend)
+        assert cache.write_orders_history("H_ABCDEF", mock_orders_data) == 0
+        # Recover: inserts succeed → the full batch persists.
+        backend._client.insert.side_effect = None
+        assert cache.write_orders_history("H_ABCDEF", mock_orders_data) == len(mock_orders_data)
 
     def test_tool_returns_structured_error_not_exception(
         self,
@@ -258,35 +239,16 @@ class TestPostExceptionConsistency:
 
 
 class TestNestedExceptions:
-    def test_quarantine_chain_recovers(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-        """Open fails (1st exc) → quarantine → retry connect succeeds (recovery from chained failure)."""
-        db = tmp_path / "cache.duckdb"
-        db.write_text("corrupt")
-        real_connect = duckdb.connect
-        calls = {"n": 0}
-
-        def flaky(path: str, *a: Any, **k: Any) -> Any:
-            calls["n"] += 1
-            if calls["n"] == 1:
-                raise duckdb.IOException("corrupt on first open")
-            return real_connect(path, *a, **k)
-
-        monkeypatch.setattr(duckdb, "connect", flaky)
-        cache = Cache(db_path=db)
-        try:
-            assert cache._conn is not None
-            assert calls["n"] == 2
-            # The original corrupt file was quarantined.
-            assert list(tmp_path.glob("cache.duckdb.corrupt-*"))
-        finally:
-            cache.close()
-
     def test_get_cache_init_failure_degrades_to_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """If Cache() construction raises, get_cache returns None (graceful nested-failure handling)."""
+        """If backend construction raises, get_cache returns None (graceful nested-failure handling)."""
         import schwab_positions_mcp.cache as cache_module
 
         cache_module.reset_cache_singleton()
         monkeypatch.setenv("SCHWAB_POSITIONS_CACHE_ENABLED", "1")
-        monkeypatch.setattr(cache_module, "Cache", lambda *_a, **_k: (_ for _ in ()).throw(duckdb.Error("init boom")))
+        monkeypatch.setattr(
+            cache_module,
+            "get_cache_backend",
+            lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("init boom")),
+        )
         assert cache_module.get_cache() is None
         cache_module.reset_cache_singleton()

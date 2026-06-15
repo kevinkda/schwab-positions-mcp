@@ -23,7 +23,7 @@
 | ------------------------ | ------------------------------------------------------------------------------------------ |
 | `get_accounts`           | 列出所有关联的 Schwab 账户；可选 `fields=["positions"]` 内联展开持仓。                     |
 | `get_account_numbers`    | 返回 `accountNumber` → 加密 `account_hash`（即 `hashValue`）映射，是其余工具的前置依赖。   |
-| `get_account_positions`  | 获取单账户持仓 + 余额；若缓存启用则把持仓快照写入本地 DuckDB。                             |
+| `get_account_positions`  | 获取单账户持仓 + 余额；若缓存启用则把持仓快照写入派生历史缓存。                             |
 | `get_orders_history`     | 查询两个时区感知 datetime 之间的历史订单（Schwab 服务端最长 60 天回溯）。                  |
 | `get_transactions`       | 查询两个 ISO 日期之间的交易（TRADE / DIVIDEND_OR_INTEREST 等）。                           |
 | `get_account_summary`    | 单账户聚合：持仓数、总市值、总盈亏、现金、购买力、余额表。                                 |
@@ -99,14 +99,26 @@ uv run python -m schwab_positions_mcp # 等价
 
 ## 缓存
 
-本地 DuckDB 缓存可持久化只读快照（持仓 / 订单 / 交易）到
-`~/.local/state/schwab-positions-mcp/cache.duckdb`，LLM Agent 可基于此
-做“上周到现在变化”类查询而不必反复打 Schwab。
+可插拔缓存可持久化只读**派生历史快照**（持仓 / 订单 / 交易），LLM Agent
+可基于此做“上周到现在变化”类查询而不必反复打 Schwab。
 
-缓存**默认关闭（需显式开启）**——不创建 DuckDB 文件，每次工具调用都
-实时打 Schwab。通过 `SCHWAB_POSITIONS_CACHE_ENABLED=true`（也接受
-`1` / `yes` / `on`）显式启用。关闭时工具返回
-`_cache_status: "skipped:disabled"`，响应结构其余不变。
+缓存**默认关闭（需显式开启）**——每次工具调用都实时打 Schwab。通过
+`SCHWAB_POSITIONS_CACHE_ENABLED=true`（也接受 `1` / `yes` / `on`）显式启用。
+关闭时工具返回 `_cache_status: "skipped:disabled"`，响应结构其余不变。
+
+### 缓存后端（v0.3.0）
+
+⚠️ **重大变更（v0.3.0）：** 移除内置 DuckDB 缓存，改为通过
+`SCHWAB_POSITIONS_CACHE_BACKEND` 选择的可插拔后端：
+
+| 后端 | 默认 | 依赖 | 说明 |
+| --- | --- | --- | --- |
+| `memory` | ✅ | 无（stdlib） | 进程内、并发安全、非阻塞、无文件。不保留持久历史——快照写入报告 `snapshot_written:0`（优雅降级）。 |
+| `clickhouse` | — | `pip install schwab-positions-mcp[clickhouse]` + `SCHWAB_POSITIONS_CLICKHOUSE_URL` | 持久化持仓/订单/交易历史。 |
+
+缓存层**只写**派生历史，从不把读结果回灌给工具，因此不会扩大 5 层只读边界。
+未装 ClickHouse 时历史持久化降级为 `requires_clickhouse_persistence` 信号，
+只读工具完全不受影响。
 
 ## 许可证
 

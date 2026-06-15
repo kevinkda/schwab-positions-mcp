@@ -25,16 +25,27 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from unittest.mock import MagicMock
 
-import duckdb
 import pytest
 
 from schwab_positions_mcp import _platform, bootstrap
 from schwab_positions_mcp import cache as cache_module
 from schwab_positions_mcp.cache import Cache, get_cache, reset_cache_singleton
+from schwab_positions_mcp.cache_backend import ClickHouseBackend, MemoryBackend
 from schwab_positions_mcp.tools import _common as tools_common
 
 if TYPE_CHECKING:
     from schwab_positions_mcp.client import ReadOnlySchwabClient
+
+
+def _ch_backend() -> ClickHouseBackend:
+    """A ClickHouse backend wired to a mock client that persists every row."""
+    client = MagicMock()
+    client.command.return_value = None
+    client.insert.return_value = None
+    result = MagicMock()
+    result.result_rows = []
+    client.query.return_value = result
+    return ClickHouseBackend(url="clickhouse://x", client=client)
 
 
 # ===========================================================================
@@ -184,147 +195,51 @@ class TestBootstrapMissingDotenv:
 
 
 # ===========================================================================
-# cache.Cache — DuckDB failure paths
+# cache.Cache — backend failure / degradation paths
 # ===========================================================================
 
 
-class TestCacheOpenQuarantine:
-    def test_open_failure_quarantines_and_retries(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-        """A first-connect DuckDB error must quarantine the bad file and retry connecting."""
-        db = tmp_path / "cache.duckdb"
-        # Seed an existing file so the rename (quarantine) actually moves something.
-        db.write_text("corrupt-bytes")
+class TestCacheBackendSelection:
+    def test_default_backend_is_memory(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("SCHWAB_POSITIONS_CACHE_BACKEND", raising=False)
+        assert Cache().backend.name == "memory"
 
-        real_connect = duckdb.connect
-        calls: dict[str, int] = {"n": 0}
-
-        def flaky_connect(path: str, *args: Any, **kwargs: Any) -> Any:
-            calls["n"] += 1
-            if calls["n"] == 1:
-                raise duckdb.IOException("simulated corrupt database")
-            return real_connect(path, *args, **kwargs)
-
-        monkeypatch.setattr(duckdb, "connect", flaky_connect)
-
-        cache = Cache(db_path=db)
-        try:
-            # Connection succeeded on retry.
-            assert cache._conn is not None
-            # The corrupt original was quarantined alongside the fresh DB.
-            quarantined = list(tmp_path.glob("cache.duckdb.corrupt-*"))
-            assert len(quarantined) == 1, "corrupt DB must be renamed aside exactly once"
-            assert calls["n"] == 2, "connect must be retried after the first failure"
-        finally:
-            cache.close()
-
-    def test_quarantine_handles_missing_original(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-        """If the original file does not exist, the rename is suppressed but retry still connects."""
-        db = tmp_path / "cache.duckdb"  # does NOT exist yet
-
-        real_connect = duckdb.connect
-        calls: dict[str, int] = {"n": 0}
-
-        def flaky_connect(path: str, *args: Any, **kwargs: Any) -> Any:
-            calls["n"] += 1
-            if calls["n"] == 1:
-                raise duckdb.Error("simulated open failure")
-            return real_connect(path, *args, **kwargs)
-
-        monkeypatch.setattr(duckdb, "connect", flaky_connect)
-
-        cache = Cache(db_path=db)
-        try:
-            assert cache._conn is not None
-            assert calls["n"] == 2
-        finally:
-            cache.close()
-
-
-class TestCacheDDLFailure:
-    def test_ddl_failure_is_logged_not_raised(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, caplog: pytest.LogCaptureFixture
-    ) -> None:
-        """A DDL execute error must be caught + logged at WARNING, not propagated."""
-        db = tmp_path / "cache.duckdb"
-
-        # Build a cache normally, then re-run _init_schema with a conn whose
-        # execute raises duckdb.Error to drive the DDL except branch.
-        cache = Cache(db_path=db)
-        try:
-            broken_conn = MagicMock()
-            broken_conn.execute.side_effect = duckdb.Error("simulated DDL failure")
-            monkeypatch.setattr(cache, "_conn", broken_conn)
-
-            import logging
-
-            with caplog.at_level(logging.WARNING):
-                cache._init_schema()
-
-            assert any("DDL failed" in rec.getMessage() for rec in caplog.records), (
-                "DDL failure must be logged at WARNING"
-            )
-        finally:
-            # restore a real conn so close() doesn't choke on the mock
-            cache._conn = None
-
-
-class TestCacheLogEventNoConn:
-    def test_log_event_noop_when_conn_none(self, tmp_path: Path) -> None:
-        """_log_event must be a no-op (early return) when the connection is closed."""
-        cache = Cache(db_path=tmp_path / "cache.duckdb")
-        cache.close()
-        assert cache._conn is None
-        # Should not raise even though there's no connection (line 202 branch).
-        cache._log_event("INSERT", "positions_snapshots", 1, "detail")
+    def test_memory_query_degrades(self) -> None:
+        cache = Cache(backend=MemoryBackend())
+        out = cache.query_history("positions_snapshots")
+        assert out["status"] == "requires_clickhouse_persistence"
 
 
 class TestCacheWriteFailures:
-    @pytest.fixture
-    def cache_with_broken_executemany(self, tmp_path: Path) -> Cache:
-        cache = Cache(db_path=tmp_path / "cache.duckdb")
-        # Patch executemany to raise; keep execute (used by _log_event) working
-        # by routing it back to the real connection where possible.
-        broken = MagicMock(wraps=cache._conn)
-        broken.executemany.side_effect = duckdb.Error("simulated write failure")
-        cache._conn = broken
-        return cache
+    def _broken_ch(self) -> Cache:
+        backend = _ch_backend()
+        backend._client.insert.side_effect = RuntimeError("simulated write failure")
+        return Cache(backend=backend)
 
-    def test_write_positions_failure_returns_zero_and_logs_error(
-        self,
-        cache_with_broken_executemany: Cache,
-        mock_positions_data: dict[str, Any],
-    ) -> None:
+    def test_write_positions_failure_returns_zero(self, mock_positions_data: dict[str, Any]) -> None:
         positions = mock_positions_data["securitiesAccount"]["positions"]
-        n = cache_with_broken_executemany.write_positions_snapshot("HASH", positions)
-        assert n == 0, "a write failure must surface as 0 inserted rows"
+        assert self._broken_ch().write_positions_snapshot("HASH", positions) == 0
 
-    def test_write_orders_failure_returns_zero(
-        self,
-        cache_with_broken_executemany: Cache,
-        mock_orders_data: list[dict[str, Any]],
-    ) -> None:
-        n = cache_with_broken_executemany.write_orders_history("HASH", mock_orders_data)
-        assert n == 0
+    def test_write_orders_failure_returns_zero(self, mock_orders_data: list[dict[str, Any]]) -> None:
+        assert self._broken_ch().write_orders_history("HASH", mock_orders_data) == 0
 
-    def test_write_transactions_failure_returns_zero(
-        self,
-        cache_with_broken_executemany: Cache,
-        mock_transactions_data: list[dict[str, Any]],
-    ) -> None:
-        n = cache_with_broken_executemany.write_transactions_history("HASH", mock_transactions_data)
-        assert n == 0
+    def test_write_transactions_failure_returns_zero(self, mock_transactions_data: list[dict[str, Any]]) -> None:
+        assert self._broken_ch().write_transactions_history("HASH", mock_transactions_data) == 0
+
+    def test_memory_writes_persist_zero(self, mock_orders_data: list[dict[str, Any]]) -> None:
+        assert Cache(backend=MemoryBackend()).write_orders_history("HASH", mock_orders_data) == 0
 
 
 class TestGetCacheInitFailure:
     def test_get_cache_returns_none_on_init_failure(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """If ``Cache()`` construction raises duckdb.Error, get_cache returns None (degrade)."""
+        """If backend construction raises, get_cache returns None (degrade)."""
         reset_cache_singleton()
         monkeypatch.setenv("SCHWAB_POSITIONS_CACHE_ENABLED", "1")
 
-        def boom(*_a: Any, **_k: Any) -> Cache:
-            raise duckdb.Error("simulated cache init failure")
+        def boom(*_a: Any, **_k: Any) -> Any:
+            raise RuntimeError("simulated cache init failure")
 
-        monkeypatch.setattr(cache_module, "Cache", boom)
+        monkeypatch.setattr(cache_module, "get_cache_backend", boom)
 
         result = get_cache()
         assert result is None, "cache init failure must degrade to None, never crash the tool"
@@ -425,19 +340,18 @@ class TestSummaryCacheWriteSuccess:
     def test_summary_writes_snapshot_and_reports_count(
         self,
         monkeypatch: pytest.MonkeyPatch,
-        tmp_path: Path,
         installed_client: ReadOnlySchwabClient,
         mock_schwab_client: MagicMock,
         mock_positions_data: dict[str, Any],
         make_response: Any,
     ) -> None:
-        """get_account_summary_impl must write a snapshot and surface 'snapshot_written:N' (lines 58-60)."""
+        """get_account_summary_impl must write a snapshot and surface 'snapshot_written:N'."""
         from schwab_positions_mcp.tools import summary
 
-        # Real cache rooted in tmp_path so the write actually succeeds.
+        # ClickHouse-mocked backend so the derived-history write durably persists.
         monkeypatch.setenv("SCHWAB_POSITIONS_CACHE_ENABLED", "1")
         cache_module.reset_cache_singleton()
-        real_cache = Cache(db_path=tmp_path / "cache.duckdb")
+        real_cache = Cache(backend=_ch_backend())
         cache_module._cache_singleton = real_cache
 
         mock_schwab_client.get_account.return_value = make_response(json_payload=mock_positions_data)
@@ -445,15 +359,10 @@ class TestSummaryCacheWriteSuccess:
         try:
             result = summary.get_account_summary_impl({"account_hash": "HASH_ABCDEF"})
             assert result["ok"] is True
-            # Two positions in mock_positions_data → 2 snapshot rows written.
+            # Two positions in mock_positions_data → 2 snapshot rows persisted.
             assert result["_cache_status"] == "snapshot_written:2", (
                 f"expected snapshot_written:2, got {result['_cache_status']!r}"
             )
-            # Cross-check the rows actually landed in DuckDB.
-            count = real_cache._conn.execute(  # type: ignore[union-attr]
-                "SELECT COUNT(*) FROM positions_snapshots"
-            ).fetchone()
-            assert count is not None and count[0] == 2
         finally:
             cache_module.reset_cache_singleton()
 

@@ -29,6 +29,7 @@ import pytest
 
 from schwab_positions_mcp import cache as cache_module
 from schwab_positions_mcp.cache import Cache
+from schwab_positions_mcp.cache_backend import ClickHouseBackend
 from schwab_positions_mcp.client import ReadOnlySchwabClient
 from schwab_positions_mcp.tools import _common as tools_common
 
@@ -85,11 +86,22 @@ def installed_client(
 
 @pytest.fixture
 def tmp_cache(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[Cache]:
-    """A :class:`Cache` rooted at ``tmp_path`` and installed as the singleton."""
+    """A :class:`Cache` installed as the singleton, backed by a ClickHouse-mocked
+    client so derived-history writes durably persist (``*_written:N``).
+
+    Uses a mock client (no live ClickHouse) per the test contract — every
+    ``insert`` succeeds, so snapshot/history writes report the full count.
+    """
+    del tmp_path
     monkeypatch.setenv("SCHWAB_POSITIONS_CACHE_ENABLED", "1")
     cache_module.reset_cache_singleton()
-    db_path = tmp_path / "cache.duckdb"
-    cache = Cache(db_path=db_path)
+    client = MagicMock()
+    client.command.return_value = None
+    client.insert.return_value = None
+    result = MagicMock()
+    result.result_rows = []
+    client.query.return_value = result
+    cache = Cache(backend=ClickHouseBackend(url="clickhouse://x", client=client))
     cache_module._cache_singleton = cache
     try:
         yield cache

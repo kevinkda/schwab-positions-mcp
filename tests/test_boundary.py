@@ -14,12 +14,15 @@ adds the remaining input dimensions. Every test asserts a concrete invariant.
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING, Any
+from unittest.mock import MagicMock
 
 import pytest
 from pydantic import ValidationError
 
 from schwab_positions_mcp.cache import Cache, _to_float
+from schwab_positions_mcp.cache_backend import ClickHouseBackend
 from schwab_positions_mcp.models import (
     GetAccountPositionsInput,
     GetOrdersHistoryInput,
@@ -27,7 +30,29 @@ from schwab_positions_mcp.models import (
 )
 
 if TYPE_CHECKING:
-    from pathlib import Path
+    pass
+
+
+def _ch_cache() -> tuple[Cache, MagicMock]:
+    """A ClickHouse-backed cache + its mock client (every insert persists)."""
+    client = MagicMock()
+    client.command.return_value = None
+    client.insert.return_value = None
+    result = MagicMock()
+    result.result_rows = []
+    client.query.return_value = result
+    return Cache(backend=ClickHouseBackend(url="clickhouse://x", client=client)), client
+
+
+def _inserted_rows(client: MagicMock) -> list[dict[str, Any]]:
+    """Decode the JSON payloads the backend inserted into the timeseries table."""
+    rows: list[dict[str, Any]] = []
+    for call in client.insert.call_args_list:
+        # ClickHouseBackend.append_timeseries inserts [[series, json_payload]].
+        data = call.args[1]
+        for entry in data:
+            rows.append(json.loads(entry[1]))
+    return rows
 
 
 def _recent_iso() -> str:
@@ -176,53 +201,35 @@ class TestSymbolBoundaries:
 
 
 class TestPositionsListSizes:
-    def test_empty_positions_writes_zero(self, tmp_path: Path) -> None:
-        cache = Cache(db_path=tmp_path / "cache.duckdb")
-        try:
-            assert cache.write_positions_snapshot("H_ABCDEF", []) == 0
-        finally:
-            cache.close()
+    def test_empty_positions_writes_zero(self) -> None:
+        cache, _ = _ch_cache()
+        assert cache.write_positions_snapshot("H_ABCDEF", []) == 0
 
-    def test_single_position(self, tmp_path: Path) -> None:
-        cache = Cache(db_path=tmp_path / "cache.duckdb")
-        try:
-            n = cache.write_positions_snapshot(
-                "H_ABCDEF",
-                [{"instrument": {"symbol": "AAPL", "assetType": "EQUITY"}, "marketValue": 1.0}],
-            )
-            assert n == 1
-        finally:
-            cache.close()
+    def test_single_position(self) -> None:
+        cache, _ = _ch_cache()
+        n = cache.write_positions_snapshot(
+            "H_ABCDEF",
+            [{"instrument": {"symbol": "AAPL", "assetType": "EQUITY"}, "marketValue": 1.0}],
+        )
+        assert n == 1
 
-    def test_large_positions_list(self, tmp_path: Path) -> None:
+    def test_large_positions_list(self) -> None:
         """A large (2000-row) positions batch must persist completely."""
-        cache = Cache(db_path=tmp_path / "cache.duckdb")
-        try:
-            big = [
-                {"instrument": {"symbol": f"SYM{i}", "assetType": "EQUITY"}, "marketValue": float(i)}
-                for i in range(2000)
-            ]
-            n = cache.write_positions_snapshot("H_ABCDEF", big)
-            assert n == 2000
-            count = cache._conn.execute(  # type: ignore[union-attr]
-                "SELECT COUNT(*) FROM positions_snapshots"
-            ).fetchone()
-            assert count is not None and count[0] == 2000
-        finally:
-            cache.close()
+        cache, client = _ch_cache()
+        big = [
+            {"instrument": {"symbol": f"SYM{i}", "assetType": "EQUITY"}, "marketValue": float(i)} for i in range(2000)
+        ]
+        n = cache.write_positions_snapshot("H_ABCDEF", big)
+        assert n == 2000
+        assert len(_inserted_rows(client)) == 2000
 
-    def test_position_with_missing_instrument_handled(self, tmp_path: Path) -> None:
+    def test_position_with_missing_instrument_handled(self) -> None:
         """A position lacking an 'instrument' key must not crash — symbol stored as empty."""
-        cache = Cache(db_path=tmp_path / "cache.duckdb")
-        try:
-            n = cache.write_positions_snapshot("H_ABCDEF", [{"marketValue": 5.0}])
-            assert n == 1
-            row = cache._conn.execute(  # type: ignore[union-attr]
-                "SELECT symbol FROM positions_snapshots"
-            ).fetchone()
-            assert row is not None and row[0] == ""
-        finally:
-            cache.close()
+        cache, client = _ch_cache()
+        n = cache.write_positions_snapshot("H_ABCDEF", [{"marketValue": 5.0}])
+        assert n == 1
+        rows = _inserted_rows(client)
+        assert rows[0]["symbol"] == ""
 
 
 # ===========================================================================
@@ -244,36 +251,26 @@ class TestNumericBoundaries:
         assert math.isinf(_to_float("inf") or 0.0)
         assert math.isnan(_to_float("nan") or 0.0)
 
-    def test_cache_handles_extreme_market_value(self, tmp_path: Path) -> None:
+    def test_cache_handles_extreme_market_value(self) -> None:
         """An astronomically large market value must persist without overflow error."""
-        cache = Cache(db_path=tmp_path / "cache.duckdb")
-        try:
-            n = cache.write_positions_snapshot(
-                "H_ABCDEF",
-                [{"instrument": {"symbol": "BIG", "assetType": "EQUITY"}, "marketValue": 1e300}],
-            )
-            assert n == 1
-            row = cache._conn.execute(  # type: ignore[union-attr]
-                "SELECT market_value FROM positions_snapshots"
-            ).fetchone()
-            assert row is not None and row[0] == pytest.approx(1e300)
-        finally:
-            cache.close()
+        cache, client = _ch_cache()
+        n = cache.write_positions_snapshot(
+            "H_ABCDEF",
+            [{"instrument": {"symbol": "BIG", "assetType": "EQUITY"}, "marketValue": 1e300}],
+        )
+        assert n == 1
+        rows = _inserted_rows(client)
+        assert rows[0]["market_value"] == pytest.approx(1e300)
 
-    def test_cache_handles_negative_quantity(self, tmp_path: Path) -> None:
+    def test_cache_handles_negative_quantity(self) -> None:
         """Short positions (negative quantity) must persist as-is, no clamping."""
-        cache = Cache(db_path=tmp_path / "cache.duckdb")
-        try:
-            cache.write_positions_snapshot(
-                "H_ABCDEF",
-                [{"instrument": {"symbol": "SHORT", "assetType": "EQUITY"}, "shortQuantity": 50.0}],
-            )
-            row = cache._conn.execute(  # type: ignore[union-attr]
-                "SELECT quantity FROM positions_snapshots"
-            ).fetchone()
-            assert row is not None and row[0] == pytest.approx(50.0)
-        finally:
-            cache.close()
+        cache, client = _ch_cache()
+        cache.write_positions_snapshot(
+            "H_ABCDEF",
+            [{"instrument": {"symbol": "SHORT", "assetType": "EQUITY"}, "shortQuantity": 50.0}],
+        )
+        rows = _inserted_rows(client)
+        assert rows[0]["quantity"] == pytest.approx(50.0)
 
 
 # ===========================================================================

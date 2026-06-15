@@ -30,7 +30,7 @@ process and config directory.
 | ------------------------ | ---------------------------------------------------------------------------------------------------- |
 | `get_accounts`           | List all linked Schwab accounts. Optional `fields=["positions"]` expands holdings inline.            |
 | `get_account_numbers`    | Map plaintext `accountNumber` to encrypted `account_hash` (required by every other tool below).      |
-| `get_account_positions`  | Fetch one account's holdings + balances; persists a positions snapshot to local DuckDB when caching is enabled. |
+| `get_account_positions`  | Fetch one account's holdings + balances; persists a positions snapshot to the derived-history cache when caching is enabled. |
 | `get_orders_history`     | Return orders between two timezone-aware datetimes (Schwab caps lookback at 60 days).                |
 | `get_transactions`       | Return transactions between two ISO dates (TRADE / DIVIDEND_OR_INTEREST / etc).                      |
 | `get_account_summary`    | Compact aggregate: position count, total market value, total P&L, cash, buying power, balances.     |
@@ -108,16 +108,29 @@ usual MCP `command` + `args` shape.
 
 ## Cache
 
-A local DuckDB cache can persist read-only snapshots (positions / orders
-/ transactions) at `~/.local/state/schwab-positions-mcp/cache.duckdb` so
-your LLM agent can run "what changed since last week" queries without
-hammering Schwab.
+A pluggable cache can persist read-only **derived-history snapshots**
+(positions / orders / transactions) so your LLM agent can run "what
+changed since last week" queries without hammering Schwab.
 
-The cache is **disabled by default (opt-in)** — no DuckDB file is created
-and every tool call hits Schwab live. Enable it explicitly with
-`SCHWAB_POSITIONS_CACHE_ENABLED=true` (also accepts `1` / `yes` / `on`).
-When disabled, tools return `_cache_status: "skipped:disabled"`; the
-response shape is otherwise unchanged.
+The cache is **disabled by default (opt-in)** — every tool call hits
+Schwab live. Enable it with `SCHWAB_POSITIONS_CACHE_ENABLED=true` (also
+accepts `1` / `yes` / `on`). When disabled, tools return
+`_cache_status: "skipped:disabled"`; the response shape is unchanged.
+
+### Cache backend (v0.3.0)
+
+⚠️ **BREAKING (v0.3.0):** the embedded DuckDB cache is removed in favour of
+a pluggable backend selected via `SCHWAB_POSITIONS_CACHE_BACKEND`:
+
+| Backend | Default | Dependency | Notes |
+| --- | --- | --- | --- |
+| `memory` | ✅ | none (stdlib) | In-process, concurrency-safe, non-blocking, no files. Keeps **no durable history** — snapshot writes report `snapshot_written:0` (graceful degradation). |
+| `clickhouse` | — | `pip install schwab-positions-mcp[clickhouse]` + `SCHWAB_POSITIONS_CLICKHOUSE_URL` | Durably persists the position/order/transaction history. |
+
+The cache layer only ever **writes** derived history — it never feeds reads
+back into a tool, so it cannot widen the 5-layer read-only boundary. Without
+ClickHouse, history persistence degrades to a `requires_clickhouse_persistence`
+signal and read-only tools are entirely unaffected.
 
 ## License
 
