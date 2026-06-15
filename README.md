@@ -4,7 +4,7 @@
 >
 > No `place_order`, no `cancel_order`, no `replace_order`. This MCP server
 > surfaces Schwab account state to LLM agents and **never** exposes a
-> mutation endpoint. Enforced by a 5-layer boundary (runtime white-list +
+> mutation endpoint. Enforced by a 5-layer boundary (runtime allow list +
 > startup warning + tool surface audit + CI grep gate + reject test).
 
 [![test](https://github.com/kevinkda/schwab-positions-mcp/actions/workflows/test.yml/badge.svg)](https://github.com/kevinkda/schwab-positions-mcp/actions/workflows/test.yml)
@@ -22,9 +22,9 @@ which exposes Schwab Market Data Production endpoints. The two repos are
 deliberately split so the trading-account credential set lives in its own
 process and config directory.
 
-## Tools (11)
+## Tools (14)
 
-### Account / portfolio (6)
+### Account / portfolio (9)
 
 | Tool                     | Description                                                                                          |
 | ------------------------ | ---------------------------------------------------------------------------------------------------- |
@@ -33,6 +33,9 @@ process and config directory.
 | `get_account_positions`  | Fetch one account's holdings + balances; persists a positions snapshot to the derived-history cache when caching is enabled. |
 | `get_orders_history`     | Return orders between two timezone-aware datetimes (Schwab caps lookback at 60 days).                |
 | `get_transactions`       | Return transactions between two ISO dates (TRADE / DIVIDEND_OR_INTEREST / etc).                      |
+| `get_user_preferences`   | Return the account user-preference settings (default account, nicknames, streamer routing). No args, no cache write. |
+| `get_order_detail`       | Read one order's full detail by numeric `order_id` (status / legs / fills). Read-only — never places / cancels / replaces. |
+| `get_transaction_detail` | Read one historical transaction's detail by `transaction_id`. Read-only — no money moves.            |
 | `get_account_summary`    | Compact aggregate: position count, total market value, total P&L, cash, buying power, balances.     |
 
 ### Derived analytics (3, read-only — pure computation, no cache write)

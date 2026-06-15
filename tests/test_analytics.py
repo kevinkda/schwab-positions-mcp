@@ -7,7 +7,7 @@ the cost-basis correctness checks and cross-account edge cases
 
 These use the same stubbed ``ReadOnlySchwabClient`` harness as
 ``test_tools_unit.py`` (the underlying schwab-py client is a ``MagicMock``;
-white-listed read methods get fake ``httpx.Response``-shaped objects). No
+allow-listed read methods get fake ``httpx.Response``-shaped objects). No
 real network and no cache writes.
 """
 
@@ -624,12 +624,12 @@ class TestGetCrossAccountSummary:
 
 
 class TestAnalyticsReadOnlyBoundary:
-    def test_analytics_only_calls_whitelisted_reads(
+    def test_analytics_only_calls_allow_listed_reads(
         self,
         installed_client: Any,
         mock_schwab_client: MagicMock,
     ) -> None:
-        """Exercising all 3 tools must only invoke white-listed read methods."""
+        """Exercising all 3 tools must only invoke allow-listed read methods."""
         mock_schwab_client.get_account_numbers.return_value = _resp(
             200, [{"accountNumber": "A1", "hashValue": VALID_HASH}]
         )

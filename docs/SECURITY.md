@@ -13,7 +13,7 @@ and the threat model behind the design.
 
 - A compromised LLM (prompt injection, jailbreak, supply-chain compromise)
   cannot place trades through this MCP server. The mutation surface does
-  not exist in the codebase, the white-list refuses unknown method calls
+  not exist in the codebase, the allow list refuses unknown method calls
   at runtime, the CI grep gate refuses any commit that adds mutation
   keywords, and the OAuth token still grants Schwab `trade` scope only
   because the upstream API requires it.
@@ -25,15 +25,16 @@ and the threat model behind the design.
 
 ## 5-layer read-only boundary
 
-### Layer 1 — `client.py` white-list (runtime)
+### Layer 1 — `client.py` allow list (runtime)
 
 `src/schwab_positions_mcp/client.py` defines `ReadOnlySchwabClient`, a thin
 wrapper around `schwab.client.Client`. Every attribute access goes through
 `__getattr__`, which:
 
-- forwards calls in `_READ_ONLY_METHODS` (a frozen set: `get_accounts`,
-  `get_account`, `get_account_orders`, `get_orders_for_account`,
-  `get_transactions`, `get_user_preferences`, `get_account_numbers`)
+- forwards calls in `_READ_ONLY_METHODS` (a frozen set: `get_account`,
+  `get_account_numbers`, `get_accounts`, `get_account_orders`, `get_order`,
+  `get_orders_for_account`, `get_transaction`, `get_transactions`,
+  `get_user_preferences`)
 - raises `NotImplementedError` for **everything else** with a message
   pointing back at this document.
 
@@ -50,12 +51,17 @@ in their MCP host's logs before the first tool call.
 
 ### Layer 3 — tool layer
 
-Only 7 tools are registered in `server.py`: 5 read-only business tools
-(`get_accounts`, `get_account_positions`, `get_orders_history`,
-`get_transactions`, `get_account_summary`) plus 2 meta tools
-(`health_check`, `get_server_info`). Both meta tools include
-`is_read_only: true` in their response, so a calling agent (or a paranoid
-human reviewer) can sanity-check the contract over JSON-RPC.
+14 tools are registered in `server.py`: 9 read-only account tools
+(`get_accounts`, `get_account_numbers`, `get_account_positions`,
+`get_orders_history`, `get_transactions`, `get_user_preferences`,
+`get_order_detail`, `get_transaction_detail`, `get_account_summary`), 3
+read-only derived-analytics tools (`get_pnl_analysis`,
+`get_concentration_analysis`, `get_cross_account_summary`), plus 2 meta
+tools (`health_check`, `get_server_info`). Every one is a pure read —
+`get_order_detail` / `get_transaction_detail` retrieve a single existing
+order / transaction by id and place / cancel / replace nothing. Both meta
+tools include `is_read_only: true` in their response, so a calling agent (or
+a paranoid human reviewer) can sanity-check the contract over JSON-RPC.
 
 ### Layer 4 — CI grep gate
 
@@ -63,7 +69,7 @@ human reviewer) can sanity-check the contract over JSON-RPC.
 It greps `src/` for the literal tokens `place_order`, `cancel_order`,
 `replace_order` and fails the build if any are found. It also asserts that
 `client.py` still declares `_READ_ONLY_METHODS` and still raises
-`NotImplementedError`, so the Layer 1 white-list cannot be silently
+`NotImplementedError`, so the Layer 1 allow list cannot be silently
 disabled by a maintainer (or an automated PR) without tripping the gate.
 
 ### Layer 5 — mutation reject test (Phase 3)

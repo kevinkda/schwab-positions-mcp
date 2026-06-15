@@ -55,7 +55,7 @@ SRC_ROOT = REPO_ROOT / "src" / "schwab_positions_mcp"
 
 class TestA01ZeroTrust:
     def test_every_attribute_access_is_re_checked(self, readonly_client: ReadOnlySchwabClient) -> None:
-        """Zero Trust: the white-list is consulted on EVERY __getattr__, not cached/bypassed."""
+        """Zero Trust: the allow list is consulted on EVERY __getattr__, not cached/bypassed."""
         # Repeated mutation attempts must each be rejected — no 'first call passes'.
         place = "place_" + "order"
         for _ in range(5):

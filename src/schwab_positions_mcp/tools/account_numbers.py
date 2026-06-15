@@ -12,7 +12,7 @@ REPL with schwab-py) just to translate ``accountNumber`` → ``hashValue``.
 
 This tool is read-only — it only calls the read-only
 ``schwab.client.Client.get_account_numbers`` method which is already on the
-Layer-1 ``_READ_ONLY_METHODS`` white-list in :mod:`schwab_positions_mcp.client`.
+Layer-1 ``_READ_ONLY_METHODS`` allow list in :mod:`schwab_positions_mcp.client`.
 """
 
 from __future__ import annotations

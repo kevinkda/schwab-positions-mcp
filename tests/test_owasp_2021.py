@@ -63,8 +63,8 @@ SRC_ROOT = REPO_ROOT / "src" / "schwab_positions_mcp"
 class TestA01BrokenAccessControl:
     _MUTATIONS = ["place_" + "order", "cancel_" + "order", "replace_" + "order"]
 
-    def test_layer1_whitelist_is_read_only(self) -> None:
-        """Layer 1: the method white-list contains only read verbs."""
+    def test_layer1_allow_list_is_read_only(self) -> None:
+        """Layer 1: the method allow list contains only read verbs."""
         assert all(m.startswith("get_") for m in _READ_ONLY_METHODS)
         assert "get_account" in _READ_ONLY_METHODS
 
@@ -86,13 +86,20 @@ class TestA01BrokenAccessControl:
         assert "READ-ONLY MODE" in joined
 
     def test_layer3_tool_surface_has_no_mutation_tool(self) -> None:
-        """Layer 3: the registered tool surface contains no mutation tool."""
+        """Layer 3: the registered tool surface contains no mutation tool.
+
+        The surface includes read-only tools whose names legitimately contain
+        ``order`` (``get_orders_history``, ``get_order_detail``) — these are
+        *reads* by id / window, not mutations. We allow those exact names and
+        still forbid any place / cancel / replace verb.
+        """
         from schwab_positions_mcp.tools import meta
 
+        read_only_order_tools = {"get_orders_history", "get_order_detail"}
         tools = meta.get_server_info_impl()["tools"]
         for t in tools:
             assert "place" not in t and "cancel" not in t and "replace" not in t
-            assert "order" not in t or t in {"get_orders_history"}
+            assert "order" not in t or t in read_only_order_tools
 
     def test_layer4_src_has_no_mutation_keywords(self) -> None:
         """Layer 4: no src file references the literal mutation API keywords."""
@@ -206,7 +213,7 @@ class TestA04InsecureDesign:
         assert all(name.startswith("get_") for name in _READ_ONLY_METHODS)
 
     def test_wrapper_default_denies_unknown_attributes(self, readonly_client: ReadOnlySchwabClient) -> None:
-        """Default-deny: anything not explicitly white-listed is rejected."""
+        """Default-deny: anything not explicitly allow-listed is rejected."""
         with pytest.raises(NotImplementedError):
             _ = readonly_client.some_future_unknown_method
 

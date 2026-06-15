@@ -2,7 +2,7 @@
 
 These tests use a stubbed ``ReadOnlySchwabClient`` (the underlying schwab-py
 ``Client`` is a ``MagicMock``) and inject a fake ``httpx.Response``-shaped
-object on the white-listed read methods. We deliberately avoid real network
+object on the allow-listed read methods. We deliberately avoid real network
 calls — ``respx`` would only help if schwab-py actually used ``httpx`` calls
 inside our test harness, which it does not when we replace the whole client.
 

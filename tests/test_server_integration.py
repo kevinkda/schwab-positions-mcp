@@ -26,9 +26,9 @@ def _resp(status: int = 200, payload: Any = None) -> MagicMock:
 
 
 class TestServerToolSurface:
-    def test_eleven_tools_registered(self) -> None:
+    def test_fourteen_tools_registered(self) -> None:
         info = meta.get_server_info_impl()
-        assert len(info["tools"]) == 11
+        assert len(info["tools"]) == 14
 
     def test_server_module_has_all_tool_callables(self) -> None:
         for name in (
@@ -37,6 +37,9 @@ class TestServerToolSurface:
             "get_account_positions",
             "get_orders_history",
             "get_transactions",
+            "get_user_preferences",
+            "get_order_detail",
+            "get_transaction_detail",
             "get_account_summary",
             "get_pnl_analysis",
             "get_concentration_analysis",
@@ -109,6 +112,38 @@ class TestServerToolSurface:
         )
         assert out["ok"] is True
         assert out["count"] == 2
+
+    def test_get_user_preferences_via_server(
+        self,
+        installed_client: Any,
+        mock_schwab_client: MagicMock,
+    ) -> None:
+        mock_schwab_client.get_user_preferences.return_value = _resp(200, {"accounts": []})
+        out = server_module.get_user_preferences()
+        assert out["ok"] is True
+        assert out["preferences"] == {"accounts": []}
+
+    def test_get_order_detail_via_server(
+        self,
+        installed_client: Any,
+        mock_schwab_client: MagicMock,
+    ) -> None:
+        mock_schwab_client.get_order.return_value = _resp(200, {"orderId": 12345, "status": "FILLED"})
+        out = server_module.get_order_detail(account_hash="ACCT_HASH_AAAAAAAAAAAA", order_id=12345)
+        assert out["ok"] is True
+        assert out["order"]["orderId"] == 12345
+        mock_schwab_client.get_order.assert_called_once_with(12345, "ACCT_HASH_AAAAAAAAAAAA")
+
+    def test_get_transaction_detail_via_server(
+        self,
+        installed_client: Any,
+        mock_schwab_client: MagicMock,
+    ) -> None:
+        mock_schwab_client.get_transaction.return_value = _resp(200, {"transactionId": "TX_001"})
+        out = server_module.get_transaction_detail(account_hash="ACCT_HASH_AAAAAAAAAAAA", transaction_id="TX_001")
+        assert out["ok"] is True
+        assert out["transaction"]["transactionId"] == "TX_001"
+        mock_schwab_client.get_transaction.assert_called_once_with("ACCT_HASH_AAAAAAAAAAAA", "TX_001")
 
     def test_get_account_summary_via_server(
         self,

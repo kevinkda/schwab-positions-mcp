@@ -2,7 +2,7 @@
 
 Every tool entrypoint follows the same shape:
   1. Validate input with a Pydantic schema (caller does this).
-  2. Acquire a :class:`ReadOnlySchwabClient` (Layer 1 white-list).
+  2. Acquire a :class:`ReadOnlySchwabClient` (Layer 1 allow list).
   3. Call the wrapped schwab-py method.
   4. Normalise errors from the HTTP response (401 / 429 / 5xx).
   5. Return a dict with a ``_cache_status`` field describing cache outcome.

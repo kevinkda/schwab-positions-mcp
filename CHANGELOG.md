@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-06-16
+
+### Added
+
+- **Three new pure read-only tools** (method A scope expansion), growing the
+  tool surface from 11 → 14. All three call only Layer-1 allow-listed read
+  methods, introduce **no** mutation path, and write **no** cache — positions
+  remains strictly read-only and the allow-list security model is unchanged:
+  - **`get_user_preferences()`** — returns the account user-preference
+    settings (default account, account nicknames, streamer routing metadata).
+    The underlying `schwab.client.Client.get_user_preferences` was already on
+    the Layer-1 `_READ_ONLY_METHODS` allow list; v0.4.0 surfaces it as a
+    first-class MCP tool. No arguments, no cache write.
+  - **`get_order_detail(account_hash, order_id)`** — reads a single order's
+    full detail (status / legs / fills) by numeric id. Wraps schwab-py's
+    read-only `get_order(order_id, account_hash)`. It retrieves an existing
+    order only — it never places, cancels, or replaces an order.
+  - **`get_transaction_detail(account_hash, transaction_id)`** — reads a single
+    historical transaction record by id. Wraps schwab-py's read-only
+    `get_transaction(account_hash, transaction_id)`. No money moves; pure read.
+- `get_order` and `get_transaction` added to the Layer-1 `_READ_ONLY_METHODS`
+  allow list (both read-only; default-deny posture preserved for everything
+  else). New zero-mutation tests assert the three tools call only allow-listed
+  reads, contain no mutation keywords, and that place/cancel/replace remain
+  rejected at runtime after the allow-list grew.
+
+### Changed
+
+- **Inclusive-language correction (terminology only, no semantic change):**
+  replaced `whitelist` / `white-list` → **allow list** and `blacklist` /
+  `black-list` → **deny list** across code comments (`client.py`,
+  `analytics.py`, `_common.py`, `account_numbers.py`), `docs/SECURITY.md`
+  (5-layer boundary description) and `docs/THREAT_MODEL.md`, `README.md`,
+  `README_zh.md` (白名单 → 允许清单), the `security-grep.yml` CI workflow
+  comments, and test names (`test_whitelist_*` → `test_allow_list_*`, etc.).
+  The allow-list security model itself is **unchanged**: default-deny, only
+  explicitly allow-listed read-only endpoints are forwarded. The neutral
+  internal identifier `_READ_ONLY_METHODS` is retained; only its surrounding
+  comments were reworded.
+- `docs/SECURITY.md` Layer 1 / Layer 3 descriptions updated to list the 9
+  read-only account methods on the allow list and the 14-tool surface.
+- 100% line + branch coverage preserved across all new tools and renamed tests.
+
 ## [0.3.0] - 2026-06-15
 
 ### Changed

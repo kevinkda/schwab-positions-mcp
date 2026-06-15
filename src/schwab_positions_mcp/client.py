@@ -1,4 +1,4 @@
-"""Schwab API client wrapper with read-only white-list enforcement.
+"""Schwab API client wrapper with read-only allow-list enforcement.
 
 This is **Layer 1** of the 5-layer read-only security boundary documented in
 ``docs/SECURITY.md``. Every call into the underlying ``schwab.client.Client``
@@ -12,7 +12,7 @@ attempts that bypass the import-time interface still fail.
 
 The complementary CI grep gate (``.github/workflows/security-grep.yml``,
 Layer 4) blocks any source file from referring to those mutation method names
-at all, so this white-list is defence-in-depth, not the only barrier.
+at all, so this allow list is defence-in-depth, not the only barrier.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 
 
 # ---------------------------------------------------------------------------
-# Read-only method white-list — keep alphabetised; every entry must be a
+# Read-only method allow list — keep alphabetised; every entry must be a
 # read-only schwab-py Client method that this MCP server intends to expose.
 # ---------------------------------------------------------------------------
 _READ_ONLY_METHODS: frozenset[str] = frozenset(
@@ -33,7 +33,9 @@ _READ_ONLY_METHODS: frozenset[str] = frozenset(
         "get_account_numbers",
         "get_accounts",
         "get_account_orders",
+        "get_order",
         "get_orders_for_account",
+        "get_transaction",
         "get_transactions",
         "get_user_preferences",
     }
@@ -41,9 +43,9 @@ _READ_ONLY_METHODS: frozenset[str] = frozenset(
 
 
 class ReadOnlySchwabClient:
-    """Thin wrapper enforcing a read-only method white-list.
+    """Thin wrapper enforcing a read-only method allow list.
 
-    Calls to any non-white-listed attribute raise :class:`NotImplementedError`
+    Calls to any non-allow-listed attribute raise :class:`NotImplementedError`
     with a message pointing at ``docs/SECURITY.md``.
     """
 

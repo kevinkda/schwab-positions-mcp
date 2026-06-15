@@ -3,7 +3,7 @@
 This module adds three **read-only, derived** tools that compute analytics on
 top of the data already returned by the existing read-only Schwab endpoints.
 They introduce **no** new mutation paths, **no** new cache writes, and call
-**only** the Layer-1 white-listed read methods (``get_account``,
+**only** the Layer-1 allow-listed read methods (``get_account``,
 ``get_account_numbers``) via :class:`schwab_positions_mcp.client.ReadOnlySchwabClient`:
 
 - :func:`get_pnl_analysis_impl` — per-position cost basis / unrealized P&L /
@@ -83,7 +83,7 @@ def _fetch_securities_account(account_hash: str) -> tuple[dict[str, Any] | None,
     On success returns ``(securities_account, None)``. On a normalised Schwab
     error returns ``(None, error_payload)`` where ``error_payload`` is the
     standard ``{"ok": False, "error": {...}}`` shape used across the tools.
-    Only the Layer-1 white-listed read method ``get_account`` is used.
+    Only the Layer-1 allow-listed read method ``get_account`` is used.
     """
     client = get_client()
     response = client.get_account(account_hash, fields=["positions"])
@@ -108,7 +108,7 @@ def get_pnl_analysis_impl(payload: dict[str, Any]) -> dict[str, Any]:
     """Derive per-position + portfolio P&L (cost-basis method: AVERAGE COST).
 
     Read-only derived computation. No mutation, no cache write. Calls only the
-    white-listed read methods ``get_account`` (positions) and ``get_transactions``
+    allow-listed read methods ``get_account`` (positions) and ``get_transactions``
     (realized P&L). The cost-basis method is **average cost** because Schwab's
     positions feed only exposes the blended ``averagePrice`` per holding — there
     are no per-lot acquisition records to run a FIFO walk over.
@@ -187,7 +187,7 @@ def _derive_realized_pl(account_hash: str, lookback_days: int) -> dict[str, Any]
 
     Returns ``available: False`` (and ``realized_pl: None``) when the
     transactions endpoint errors, so the P&L tool still returns the unrealized
-    block rather than failing the whole call. Uses only the white-listed
+    block rather than failing the whole call. Uses only the allow-listed
     ``get_transactions`` read method.
     """
     client = get_client()
@@ -233,7 +233,7 @@ def get_concentration_analysis_impl(payload: dict[str, Any]) -> dict[str, Any]:
     """Derive concentration metrics (top-N weights / HHI / max weight / asset mix).
 
     Read-only derived computation. No mutation, no cache write. Calls only the
-    white-listed ``get_account`` read method. Weights are computed on absolute
+    allow-listed ``get_account`` read method. Weights are computed on absolute
     market value so short positions still contribute exposure. There is no
     sector field in the Schwab positions feed, so ``sector_exposure`` is
     ``"N/A"`` and ``asset_type_exposure`` is surfaced as a proxy.
@@ -329,7 +329,7 @@ def get_cross_account_summary_impl(_payload: dict[str, Any] | None = None) -> di
     """Aggregate positions + balances across every linked account.
 
     Read-only derived computation. No mutation, no cache write. Fans out over
-    the white-listed ``get_account_numbers`` (to discover account hashes) then
+    the allow-listed ``get_account_numbers`` (to discover account hashes) then
     ``get_account`` per account, and merges the results into a combined view:
     per-account share-of-total liquidation value and a symbol-level holdings
     roll-up de-duplicated across accounts.

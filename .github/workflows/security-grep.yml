@@ -27,7 +27,7 @@ jobs:
           fi
           echo "OK — no mutation API keywords in src/."
 
-      - name: Confirm read-only client white-list still asserts the boundary
+      - name: Confirm read-only client allow list still asserts the boundary
         run: |
           set -euo pipefail
           if ! grep -q "_READ_ONLY_METHODS" src/schwab_positions_mcp/client.py ; then
@@ -35,7 +35,7 @@ jobs:
             exit 1
           fi
           if ! grep -q "NotImplementedError" src/schwab_positions_mcp/client.py ; then
-            echo "::error::client.py no longer raises NotImplementedError on non-white-listed attribute access — Layer 1 has regressed."
+            echo "::error::client.py no longer raises NotImplementedError on non-allow-listed attribute access — Layer 1 has regressed."
             exit 1
           fi
           echo "OK — Layer 1 still in place."

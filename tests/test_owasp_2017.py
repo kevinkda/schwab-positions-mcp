@@ -132,7 +132,7 @@ class TestA1Injection:
         """The account_hash is forwarded as a positional arg to schwab-py, never URL-concatenated here.
 
         We confirm the tool passes the validated hash straight to the
-        white-listed client method — our code never builds a URL string, so
+        allow-listed client method — our code never builds a URL string, so
         there is no place to inject one.
         """
         from schwab_positions_mcp.tools import positions
@@ -260,14 +260,14 @@ class TestA5BrokenAccessControl:
         ["create_order", "submit_order", "delete_order", "modify_order", "trade", "buy", "sell"],
     )
     def test_arbitrary_write_verbs_rejected(self, readonly_client: ReadOnlySchwabClient, method_name: str) -> None:
-        """Any method not on the read-only white-list is rejected — default-deny."""
+        """Any method not on the read-only allow list is rejected — default-deny."""
         with pytest.raises(NotImplementedError):
             getattr(readonly_client, method_name)
 
-    def test_whitelist_is_read_only_only(self) -> None:
-        """The white-list must contain only 'get_*' read verbs — no write verbs."""
+    def test_allow_list_is_read_only_only(self) -> None:
+        """The allow list must contain only 'get_*' read verbs — no write verbs."""
         for name in _READ_ONLY_METHODS:
-            assert name.startswith("get_"), f"non-read method {name!r} leaked onto the white-list"
+            assert name.startswith("get_"), f"non-read method {name!r} leaked onto the allow list"
 
 
 # ===========================================================================

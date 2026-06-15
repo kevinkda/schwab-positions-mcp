@@ -3,4 +3,4 @@
 NO trade endpoints by design. See docs/SECURITY.md.
 """
 
-__version__ = "0.2.1"
+__version__ = "0.4.0"

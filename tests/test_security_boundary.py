@@ -41,7 +41,7 @@ class TestGrepBoundary:
             f"API keywords and would fail the security-grep CI gate: {offenders}"
         )
 
-    def test_client_still_declares_whitelist(self) -> None:
+    def test_client_still_declares_allow_list(self) -> None:
         client_py = (SRC_ROOT / "client.py").read_text(encoding="utf-8")
         assert "_READ_ONLY_METHODS" in client_py, (
             "Layer 1 has regressed — client.py no longer declares _READ_ONLY_METHODS. The CI grep gate would also fail."
@@ -50,7 +50,7 @@ class TestGrepBoundary:
     def test_client_still_raises_not_implemented(self) -> None:
         client_py = (SRC_ROOT / "client.py").read_text(encoding="utf-8")
         assert "NotImplementedError" in client_py, (
-            "Layer 1 has regressed — client.py no longer raises NotImplementedError on non-white-listed access."
+            "Layer 1 has regressed — client.py no longer raises NotImplementedError on non-allow-listed access."
         )
 
 

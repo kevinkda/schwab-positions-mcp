@@ -271,3 +271,56 @@ class GetConcentrationAnalysisInput(_StrictModel):
         le=50,
         description="How many largest holdings to surface in top_holdings (1..50).",
     )
+
+
+# ---------------------------------------------------------------------------
+# v0.4.0 read-only detail tools (single-record lookups)
+# ---------------------------------------------------------------------------
+
+# Schwab numeric order id. Schwab returns a 64-bit integer order id; we accept
+# it as a positive int and forward it verbatim to the read-only ``get_order``
+# endpoint. No mutation — this is a single-order *read* by id.
+_OrderId = Annotated[
+    int,
+    Field(
+        ge=1,
+        le=9_223_372_036_854_775_807,
+        description="Schwab numeric order id (positive 64-bit integer).",
+    ),
+]
+
+# Schwab transaction id. The Trader API surfaces transaction ids as opaque
+# strings (some legacy ids are numeric, newer ones are alphanumeric); we keep
+# a generous alphanumeric pattern and forward verbatim to ``get_transaction``.
+_TransactionId = Annotated[
+    str,
+    Field(
+        min_length=1,
+        max_length=64,
+        pattern=r"^[A-Za-z0-9_\-]+$",
+        description="Schwab transaction id (alphanumeric, from get_transactions).",
+    ),
+]
+
+
+class GetOrderDetailInput(_StrictModel):
+    """Input for ``get_order_detail`` — read one order by id (read-only).
+
+    Wraps schwab-py's ``Client.get_order(order_id, account_hash)``. This is a
+    pure *read* of a single order's details; it never places, cancels, or
+    replaces an order.
+    """
+
+    account_hash: _AccountHashStr
+    order_id: _OrderId
+
+
+class GetTransactionDetailInput(_StrictModel):
+    """Input for ``get_transaction_detail`` — read one transaction by id.
+
+    Wraps schwab-py's ``Client.get_transaction(account_hash, transaction_id)``.
+    Pure read of a single historical transaction record; no mutation.
+    """
+
+    account_hash: _AccountHashStr
+    transaction_id: _TransactionId

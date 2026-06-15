@@ -22,7 +22,19 @@ from typing import Any  # noqa: E402
 from mcp.server.fastmcp import FastMCP  # noqa: E402
 
 from . import __version__ as SERVER_VERSION  # noqa: E402
-from .tools import account_numbers, accounts, analytics, meta, orders, positions, summary, transactions  # noqa: E402
+from .tools import (  # noqa: E402
+    account_numbers,
+    accounts,
+    analytics,
+    meta,
+    order_detail,
+    orders,
+    positions,
+    preferences,
+    summary,
+    transaction_detail,
+    transactions,
+)
 
 logger = logging.getLogger(__name__)
 logger.warning("schwab-positions-mcp starting in READ-ONLY MODE. No trade endpoints exposed. See docs/SECURITY.md.")
@@ -113,6 +125,44 @@ def get_transactions(
             "types": types,
             "symbol": symbol,
         }
+    )
+
+
+@mcp.tool(
+    name="get_user_preferences",
+    description=(
+        "Return the account user-preference settings (read-only): default "
+        "account, account nicknames, and streamer routing metadata. No "
+        "arguments. No mutation, no cache write."
+    ),
+)
+def get_user_preferences() -> dict[str, Any]:
+    return preferences.get_user_preferences_impl()
+
+
+@mcp.tool(
+    name="get_order_detail",
+    description=(
+        "Read a single order's full detail by numeric order_id for one "
+        "account (read-only). Retrieves an existing order's status / legs / "
+        "fills — it does NOT place, cancel, or replace an order. No cache write."
+    ),
+)
+def get_order_detail(account_hash: str, order_id: int) -> dict[str, Any]:
+    return order_detail.get_order_detail_impl({"account_hash": account_hash, "order_id": order_id})
+
+
+@mcp.tool(
+    name="get_transaction_detail",
+    description=(
+        "Read a single historical transaction's detail by transaction_id for "
+        "one account (read-only). Retrieves an existing settled/booked "
+        "transaction record — no money moves, no mutation. No cache write."
+    ),
+)
+def get_transaction_detail(account_hash: str, transaction_id: str) -> dict[str, Any]:
+    return transaction_detail.get_transaction_detail_impl(
+        {"account_hash": account_hash, "transaction_id": transaction_id}
     )
 
 
