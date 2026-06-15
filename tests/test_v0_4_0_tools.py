@@ -182,16 +182,12 @@ class TestGetTransactionDetail:
     ) -> None:
         # schwab-py: get_transaction(account_hash, transaction_id) — hash MUST be first.
         mock_schwab_client.get_transaction.return_value = _resp(200, {"transactionId": VALID_TX_ID})
-        transaction_detail.get_transaction_detail_impl(
-            {"account_hash": VALID_HASH, "transaction_id": VALID_TX_ID}
-        )
+        transaction_detail.get_transaction_detail_impl({"account_hash": VALID_HASH, "transaction_id": VALID_TX_ID})
         mock_schwab_client.get_transaction.assert_called_once_with(VALID_HASH, VALID_TX_ID)
 
     def test_numeric_string_id_boundary(self, installed_client: Any, mock_schwab_client: MagicMock) -> None:
         mock_schwab_client.get_transaction.return_value = _resp(200, {"transactionId": "123456"})
-        out = transaction_detail.get_transaction_detail_impl(
-            {"account_hash": VALID_HASH, "transaction_id": "123456"}
-        )
+        out = transaction_detail.get_transaction_detail_impl({"account_hash": VALID_HASH, "transaction_id": "123456"})
         assert out["ok"] is True
         assert out["transaction_id"] == "123456"
 
@@ -202,9 +198,7 @@ class TestGetTransactionDetail:
 
     def test_illegal_chars_transaction_id_rejected(self, installed_client: Any) -> None:
         with pytest.raises(Exception) as excinfo:
-            transaction_detail.get_transaction_detail_impl(
-                {"account_hash": VALID_HASH, "transaction_id": "TX/../etc"}
-            )
+            transaction_detail.get_transaction_detail_impl({"account_hash": VALID_HASH, "transaction_id": "TX/../etc"})
         assert "validation" in type(excinfo.value).__name__.lower()
 
     def test_invalid_hash_rejected(self, installed_client: Any) -> None:
@@ -257,18 +251,14 @@ class TestV040ToolsAreZeroMutation:
         for name in self._NEW_READ_METHODS:
             assert name.startswith("get_"), f"{name!r} is not a read verb"
 
-    def test_tools_only_call_allow_listed_reads(
-        self, installed_client: Any, mock_schwab_client: MagicMock
-    ) -> None:
+    def test_tools_only_call_allow_listed_reads(self, installed_client: Any, mock_schwab_client: MagicMock) -> None:
         mock_schwab_client.get_user_preferences.return_value = _resp(200, {})
         mock_schwab_client.get_order.return_value = _resp(200, {"orderId": VALID_ORDER_ID})
         mock_schwab_client.get_transaction.return_value = _resp(200, {"transactionId": VALID_TX_ID})
 
         preferences.get_user_preferences_impl()
         order_detail.get_order_detail_impl({"account_hash": VALID_HASH, "order_id": VALID_ORDER_ID})
-        transaction_detail.get_transaction_detail_impl(
-            {"account_hash": VALID_HASH, "transaction_id": VALID_TX_ID}
-        )
+        transaction_detail.get_transaction_detail_impl({"account_hash": VALID_HASH, "transaction_id": VALID_TX_ID})
 
         called = {c[0] for c in mock_schwab_client.method_calls}
         assert called <= set(_READ_ONLY_METHODS), f"a new tool called a non-allow-listed method: {called}"
@@ -279,9 +269,7 @@ class TestV040ToolsAreZeroMutation:
             for kw in self._MUTATIONS:
                 assert kw not in src, f"{mod.__name__} contains forbidden mutation keyword {kw!r}"
 
-    def test_mutation_still_rejected_after_allow_list_growth(
-        self, readonly_client: ReadOnlySchwabClient
-    ) -> None:
+    def test_mutation_still_rejected_after_allow_list_growth(self, readonly_client: ReadOnlySchwabClient) -> None:
         """Growing the allow list with 3 reads must NOT make any mutation reachable."""
         for kw in self._MUTATIONS:
             with pytest.raises(NotImplementedError):
