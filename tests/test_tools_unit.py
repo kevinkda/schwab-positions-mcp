@@ -16,7 +16,7 @@ Each tool has at least 5 paths covered:
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -185,10 +185,12 @@ class TestGetAccountPositions:
 
 class TestGetOrdersHistory:
     def _payload(self, **kw: Any) -> dict[str, Any]:
+        # Use recent dates inside the 60-day lookback window.
+        now = datetime.now(UTC)
         base: dict[str, Any] = {
             "account_hash": VALID_HASH,
-            "from_entered_time": datetime(2026, 5, 1, tzinfo=UTC),
-            "to_entered_time": datetime(2026, 5, 28, tzinfo=UTC),
+            "from_entered_time": now - timedelta(days=30),
+            "to_entered_time": now - timedelta(days=5),
         }
         base.update(kw)
         return base
@@ -267,10 +269,12 @@ class TestGetOrdersHistory:
 
 class TestGetTransactions:
     def _payload(self, **kw: Any) -> dict[str, Any]:
+        # Use recent dates so we stay inside the 60-day lookback enforced by models.
+        today = date.today()
         base: dict[str, Any] = {
             "account_hash": VALID_HASH,
-            "start_date": date(2026, 5, 1),
-            "end_date": date(2026, 5, 28),
+            "start_date": today - timedelta(days=30),
+            "end_date": today - timedelta(days=5),
         }
         base.update(kw)
         return base

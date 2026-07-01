@@ -16,7 +16,9 @@ from . import bootstrap
 
 bootstrap.bootstrap_dotenv()
 
+import argparse  # noqa: E402
 import logging  # noqa: E402
+import sys  # noqa: E402
 from typing import Any  # noqa: E402
 
 from mcp.server.fastmcp import FastMCP  # noqa: E402
@@ -234,8 +236,45 @@ def get_server_info() -> dict[str, Any]:
     return meta.get_server_info_impl()
 
 
-def main() -> None:
-    mcp.run(transport="stdio")
+def main(argv: list[str] | None = None) -> None:
+    """Entry point supporting both stdio (default) and streamable-http for gateway use.
+
+    Examples:
+      python -m schwab_positions_mcp                  # stdio (Claude Desktop etc.)
+      schwab-positions-mcp --http --port 3470         # HTTP for Grok App / gateway
+    """
+    if argv is None:
+        argv = sys.argv[1:]
+
+    parser = argparse.ArgumentParser(
+        prog="schwab-positions-mcp",
+        description="Schwab positions MCP (read-only). stdio by default; use --http for remote/Grok connectors.",
+    )
+    parser.add_argument(
+        "--http",
+        action="store_true",
+        help="Use streamable-http transport (binds to --host/--port) instead of stdio.",
+    )
+    parser.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="Host interface to bind when using --http (use 0.0.0.0 for gateway).",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8000,
+        help="TCP port when using --http transport.",
+    )
+
+    args = parser.parse_args(argv)
+
+    if args.http:
+        mcp.settings.host = args.host
+        mcp.settings.port = args.port
+        mcp.run(transport="streamable-http")
+    else:
+        mcp.run(transport="stdio")
 
 
 if __name__ == "__main__":  # pragma: no cover

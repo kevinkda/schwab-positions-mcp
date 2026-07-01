@@ -266,15 +266,55 @@ class TestServerWrappers:
         assert result is sentinel
 
     def test_main_runs_stdio_transport(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """server.main must start the MCP server with stdio transport (line 144)."""
+        """server.main must start the MCP server with stdio transport by default."""
         import schwab_positions_mcp.server as srv
 
         run_calls: list[dict[str, Any]] = []
         monkeypatch.setattr(srv.mcp, "run", lambda **kwargs: run_calls.append(kwargs))
 
-        srv.main()
+        # Pass explicit empty argv so pytest's sys.argv doesn't interfere with argparse.
+        srv.main([])
 
-        assert run_calls == [{"transport": "stdio"}], "main must invoke mcp.run(transport='stdio')"
+        assert run_calls == [{"transport": "stdio"}], "main must invoke mcp.run(transport='stdio') by default"
+
+    def test_main_http_transport_configures_settings_and_runs_streamable_http(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """--http flag must set host/port on mcp.settings and use streamable-http transport."""
+        import schwab_positions_mcp.server as srv
+
+        run_calls: list[dict[str, Any]] = []
+        monkeypatch.setattr(srv.mcp, "run", lambda **kwargs: run_calls.append(kwargs))
+
+        # Save/restore because the function mutates the live settings object
+        orig_host = srv.mcp.settings.host
+        orig_port = srv.mcp.settings.port
+        try:
+            srv.main(["--http", "--host", "0.0.0.0", "--port", "3470"])  # noqa: S104
+            assert run_calls == [{"transport": "streamable-http"}]
+            assert srv.mcp.settings.host == "0.0.0.0"  # noqa: S104
+            assert srv.mcp.settings.port == 3470
+        finally:
+            srv.mcp.settings.host = orig_host
+            srv.mcp.settings.port = orig_port
+
+    def test_main_http_uses_default_host_and_port_when_not_specified(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Only --http should still use the documented defaults (127.0.0.1:8000)."""
+        import schwab_positions_mcp.server as srv
+
+        run_calls: list[dict[str, Any]] = []
+        monkeypatch.setattr(srv.mcp, "run", lambda **kwargs: run_calls.append(kwargs))
+
+        orig_host = srv.mcp.settings.host
+        orig_port = srv.mcp.settings.port
+        try:
+            srv.main(["--http"])
+            assert run_calls == [{"transport": "streamable-http"}]
+            assert srv.mcp.settings.host == "127.0.0.1"
+            assert srv.mcp.settings.port == 8000
+        finally:
+            srv.mcp.settings.host = orig_host
+            srv.mcp.settings.port = orig_port
 
 
 # ===========================================================================

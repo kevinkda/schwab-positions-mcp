@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 from pydantic import ValidationError
@@ -83,10 +83,12 @@ class TestGetAccountPositionsInput:
 
 class TestGetOrdersHistoryInput:
     def _payload(self, **overrides: object) -> dict[str, object]:
+        # Recent dates inside 60-day lookback.
+        now = datetime.now(UTC)
         base: dict[str, object] = {
             "account_hash": VALID_HASH,
-            "from_entered_time": datetime(2026, 5, 1, tzinfo=UTC),
-            "to_entered_time": datetime(2026, 5, 28, tzinfo=UTC),
+            "from_entered_time": now - timedelta(days=30),
+            "to_entered_time": now - timedelta(days=5),
         }
         base.update(overrides)
         return base
@@ -139,10 +141,12 @@ class TestGetOrdersHistoryInput:
 
 class TestGetTransactionsInput:
     def _payload(self, **overrides: object) -> dict[str, object]:
+        # Recent dates to satisfy 60-day lookback validation.
+        today = date.today()
         base: dict[str, object] = {
             "account_hash": VALID_HASH,
-            "start_date": date(2026, 5, 1),
-            "end_date": date(2026, 5, 28),
+            "start_date": today - timedelta(days=30),
+            "end_date": today - timedelta(days=5),
         }
         base.update(overrides)
         return base
@@ -161,9 +165,10 @@ class TestGetTransactionsInput:
             GetTransactionsInput.model_validate(self._payload(types=["NOT_REAL"]))
 
     def test_end_before_start_rejected(self) -> None:
+        today = date.today()
         with pytest.raises(ValidationError):
             GetTransactionsInput.model_validate(
-                self._payload(start_date=date(2026, 5, 28), end_date=date(2026, 5, 1)),
+                self._payload(start_date=today - timedelta(days=5), end_date=today - timedelta(days=30)),
             )
 
     def test_symbol_too_long_rejected(self) -> None:
