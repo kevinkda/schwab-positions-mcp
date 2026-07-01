@@ -26,7 +26,7 @@ exercised here — see tests/test_security_boundary.py for that.
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -140,11 +140,12 @@ class TestB1EnforceEnumsDisabled:
     ) -> None:
         """``status="FILLED"`` must reach ``get_orders_for_account`` as a string."""
         mock_schwab_client.get_orders_for_account.return_value = _resp(200, mock_orders_data)
+        today = datetime.now(UTC)
         out = orders.get_orders_history_impl(
             {
                 "account_hash": VALID_HASH,
-                "from_entered_time": datetime(2026, 5, 1, tzinfo=UTC),
-                "to_entered_time": datetime(2026, 5, 28, tzinfo=UTC),
+                "from_entered_time": today - timedelta(days=30),
+                "to_entered_time": today - timedelta(days=5),
                 "status": "FILLED",
             }
         )
@@ -160,11 +161,12 @@ class TestB1EnforceEnumsDisabled:
     ) -> None:
         """``types=["TRADE"]`` must reach ``get_transactions`` as a list of strings."""
         mock_schwab_client.get_transactions.return_value = _resp(200, mock_transactions_data)
+        today = date.today()
         out = transactions.get_transactions_impl(
             {
                 "account_hash": VALID_HASH,
-                "start_date": date(2026, 5, 1),
-                "end_date": date(2026, 5, 28),
+                "start_date": today - timedelta(days=30),
+                "end_date": today - timedelta(days=5),
                 "types": ["TRADE"],
             }
         )
